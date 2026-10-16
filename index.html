@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>호박 고누</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri/dist/galmuri.css">
+<style>
+:root{
+  --ink:#fdf3dc; --dim:#c9b38f; --dark:#1b120d; --panel:#2a1b14; --edge:#0e0907;
+  --orange:#ff9a2e; --orange-d:#c25a12; --cyan:#59e0ff; --cyan-d:#1d7fa8; --gold:#ffd84a;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{
+  background:#2b1d18 url(img/bg.webp) center/cover no-repeat fixed;
+  color:var(--ink); font-family:'Galmuri11','Galmuri9',system-ui,sans-serif;
+  image-rendering:pixelated; overflow:hidden; user-select:none;
+}
+.app{height:100dvh;max-width:480px;margin:0 auto;display:flex;flex-direction:column;padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
+.screen{display:none;flex:1;flex-direction:column;min-height:0}
+.screen.on{display:flex}
+.box{background:rgba(27,18,13,.88);border:3px solid var(--edge);box-shadow:inset 0 0 0 2px #5a3a26, 4px 4px 0 rgba(0,0,0,.45);padding:14px}
+.btn{font:inherit;font-size:18px;color:var(--dark);background:var(--orange);border:3px solid var(--edge);box-shadow:inset -3px -3px 0 var(--orange-d),inset 3px 3px 0 #ffd09a,3px 3px 0 rgba(0,0,0,.5);padding:12px 18px;cursor:pointer;width:100%}
+.btn:active{transform:translate(2px,2px);box-shadow:inset -3px -3px 0 var(--orange-d),inset 3px 3px 0 #ffd09a}
+.btn.sub{background:#6b4a33;color:var(--ink);box-shadow:inset -3px -3px 0 #3e2a1c,inset 3px 3px 0 #8f6a4c,3px 3px 0 rgba(0,0,0,.5)}
+.btn.small{font-size:14px;padding:8px 12px;width:auto}
+.btn:disabled{opacity:.5}
+
+/* 첫 화면 */
+#home{justify-content:center;gap:18px;align-items:stretch}
+.title{text-align:center;margin-top:8px}
+.title h1{font-size:44px;margin:0;color:var(--orange);text-shadow:3px 3px 0 var(--edge),-2px -2px 0 var(--edge),2px -2px 0 var(--edge),-2px 2px 0 var(--edge)}
+.title p{margin:6px 0 0;color:var(--dim);font-size:13px}
+.duo{display:flex;justify-content:center;align-items:flex-end;gap:10px;height:110px}
+.duo img{width:96px;animation:bob 1.2s steps(2) infinite}
+.duo img:last-child{animation-delay:.6s}
+.duo b{font-size:22px;color:var(--gold);margin-bottom:34px}
+@keyframes bob{50%{transform:translateY(-6px)}}
+label.nick{display:block;font-size:14px;color:var(--dim);margin-bottom:6px}
+.nick-row input{font:inherit;font-size:20px;width:100%;padding:10px;background:#120b08;color:var(--ink);border:3px solid var(--edge);box-shadow:inset 2px 2px 0 #000}
+.err{color:#ff8a7a;font-size:13px;min-height:18px;margin-top:6px}
+.stack{display:flex;flex-direction:column;gap:10px}
+
+/* 기다리는 화면 */
+#wait{justify-content:center;align-items:center;gap:20px;text-align:center}
+#wait .box{width:100%}
+.dots::after{content:'';animation:dots 1.2s steps(4) infinite}
+@keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+.wait-pcs{display:flex;justify-content:center;gap:28px;margin:14px 0}
+.wait-pcs img{width:64px;animation:hop .6s steps(2) infinite}
+.wait-pcs img:last-child{animation-delay:.3s}
+@keyframes hop{50%{transform:translateY(-10px)}}
+
+/* 대전 화면 */
+#game{gap:8px}
+.bar{display:flex;align-items:center;gap:10px;padding:8px 10px}
+.bar img{width:40px;height:40px;object-fit:contain}
+.bar .who{flex:1;min-width:0}
+.bar .name{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar .info{font-size:12px;color:var(--dim);margin-top:2px}
+.bar .clock{font-size:22px;min-width:36px;text-align:right;color:var(--dim)}
+.bar.turn{box-shadow:inset 0 0 0 2px var(--gold),4px 4px 0 rgba(0,0,0,.45)}
+.bar.turn .clock{color:var(--gold)}
+.bar.turn .clock.low{color:#ff6b5a;animation:blink .5s steps(2) infinite}
+@keyframes blink{50%{opacity:.3}}
+.tbar{height:6px;background:#120b08;margin-top:5px;border:1px solid var(--edge)}
+.tbar i{display:block;height:100%;width:0;background:var(--gold)}
+.board-wrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;position:relative}
+svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
+.hint{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;pointer-events:none}
+.hint span{display:inline-block;background:rgba(14,9,7,.9);border:3px solid var(--gold);color:var(--gold);padding:10px 16px;font-size:20px;animation:pop .25s steps(3)}
+@keyframes pop{from{transform:scale(.6)}}
+.pc{transition:transform .38s steps(6);cursor:pointer}
+.pc .hopper.go{animation:jump .38s steps(4)}
+@keyframes jump{50%{transform:translateY(-14px)}}
+.pc .ring{display:none}
+.pc.can .ring{display:block;animation:blink .8s steps(2) infinite}
+.pc.sel .ring{display:block;animation:none;stroke:var(--gold)}
+.dest{animation:blink .6s steps(2) infinite;pointer-events:none}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.foot .moves{font-size:12px;color:var(--ink);background:rgba(14,9,7,.85);border:2px solid var(--edge);padding:5px 8px}
+
+/* 창 */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
+.modal.on{display:flex}
+.modal .box{max-width:440px;width:100%;max-height:90dvh;overflow:auto}
+.modal h2{margin:0 0 10px;font-size:22px;color:var(--orange)}
+.modal ol{padding-left:20px;margin:0 0 14px;line-height:1.7;font-size:15px}
+.result{text-align:center}
+.result img{width:120px;height:120px;object-fit:contain;margin:6px auto 4px;display:block}
+.result h2{font-size:30px;margin:4px 0}
+.result p{color:var(--dim);margin:0 0 16px;font-size:14px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--panel);border:3px solid var(--edge);padding:10px 14px;font-size:14px;z-index:20;display:none;max-width:90vw;text-align:center}
+.toast.on{display:block}
+.testtag{position:fixed;right:6px;top:6px;font-size:11px;background:#7a1f1f;padding:2px 6px;z-index:30}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <section id="home" class="screen on">
+    <div class="title"><h1>호박 고누</h1><p>상대 말을 꼼짝 못 하게 가두면 이겨요</p></div>
+    <div class="duo"><img src="img/pumpkin_idle.png" alt=""><b>VS</b><img src="img/wisp_idle.png" alt=""></div>
+    <div class="box">
+      <label class="nick" for="nick">닉네임 (2~8자)</label>
+      <div class="nick-row"><input id="nick" maxlength="8" autocomplete="off"></div>
+      <div class="err" id="homeErr"></div>
+      <div class="stack">
+        <button class="btn" id="startBtn">대전 시작</button>
+        <button class="btn sub" id="howBtn">놀이 방법</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="wait" class="screen">
+    <div class="box">
+      <div style="font-size:20px">상대를 찾는 중<span class="dots"></span></div>
+      <div class="wait-pcs"><img src="img/pumpkin_move.png" alt=""><img src="img/wisp_move.png" alt=""></div>
+      <div style="color:var(--dim);font-size:13px;margin-bottom:14px" id="waitInfo">접속한 친구와 자동으로 짝을 지어요</div>
+      <button class="btn sub" id="cancelBtn">그만 찾기</button>
+    </div>
+  </section>
+
+  <section id="game" class="screen">
+    <div class="box bar" id="oppBar">
+      <img id="oppImg" alt="">
+      <div class="who"><div class="name" id="oppName"></div><div class="info" id="oppInfo"></div><div class="tbar"><i id="oppT"></i></div></div>
+      <div class="clock" id="oppClock"></div>
+    </div>
+    <div class="board-wrap">
+      <svg id="board" viewBox="-10 0 380 620" aria-label="호박 고누 판"></svg>
+      <div class="hint" id="hint"></div>
+    </div>
+    <div class="box bar" id="meBar">
+      <img id="meImg" alt="">
+      <div class="who"><div class="name" id="meName"></div><div class="info" id="meInfo"></div><div class="tbar"><i id="meT"></i></div></div>
+      <div class="clock" id="meClock"></div>
+    </div>
+    <div class="foot"><span class="moves" id="movesInfo"></span><button class="btn sub small" id="leaveBtn">기권하기</button></div>
+  </section>
+</div>
+
+<div class="modal" id="howModal"><div class="box">
+  <h2>놀이 방법</h2>
+  <ol>
+    <li>각자 말 3개를 자기 진영(맨 아래 가로줄)에 두고 시작해요.</li>
+    <li>차례가 되면 말 하나를 선을 따라 <b>한 칸</b> 옮겨요. 말을 누르고, 반짝이는 자리를 누르면 돼요.</li>
+    <li>진영을 나온 말은 다시 어느 진영에도 들어갈 수 없어요.</li>
+    <li>상대가 움직일 수 있는 말이 하나도 없게 만들면 이겨요.</li>
+    <li>한 수에 10초! 시간이 지나면 져요.</li>
+    <li>한 사람당 30수가 지나도 끝나지 않으면 비겨요.</li>
+  </ol>
+  <button class="btn" data-close>알겠어요</button>
+</div></div>
+
+<div class="modal" id="resultModal"><div class="box result">
+  <img id="resImg" alt="">
+  <h2 id="resTitle"></h2>
+  <p id="resText"></p>
+  <div class="stack">
+    <button class="btn" id="againBtn">한 판 더</button>
+    <button class="btn sub" id="homeBtn">처음으로</button>
+  </div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
