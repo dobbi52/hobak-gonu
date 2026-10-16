@@ -69,7 +69,11 @@ function drawAccount() {
 const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 async function boot() {
-  $('howBtn').onclick = () => modal('howModal', true);
+  $('howBtn').onclick = openHelp;
+  $('howPrev').onclick = () => { helpPage--; renderHelp(); };
+  $('howNext').onclick = () => { if (helpPage === HELP.length - 1) modal('howModal', false); else { helpPage++; renderHelp(); } };
+  let seen = false; try { seen = !!localStorage.getItem('hobak:seenHelp'); } catch {}
+  if (!seen) setTimeout(openHelp, 300);
   $('startBtn').onclick = onStart;
   $('acctBtn').onclick = () => window.ArcadeAuth && window.ArcadeAuth.open(AUTH_OPTS);
   $('cancelBtn').onclick = cancelMatching;
@@ -109,6 +113,64 @@ function onStart() {
   if (!a) { window.ArcadeAuth.open({ ...AUTH_OPTS, onPlay: () => onStart() }); return; }
   myName = a.nick;
   startMatching();
+}
+
+// ---------- 놀이 방법 (그림 3쪽) ----------
+// 작은 판 그림: pcs = {점번호: 'p'|'w'|'pS'|'wS'(우는 모습)}, arrows = [[from, to, ok]]
+function miniBoard(pcs, arrows = [], homeMark = [], vb = '-10 0 380 620') {
+  const P = n => XY[n];
+  let h = `<svg viewBox="${vb}" aria-hidden="true">`;
+  h += '<defs><marker id="ah-ok" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#7dff8a"/></marker></defs>';
+  for (const y of homeMark) h += `<rect x="14" y="${y - 30}" width="332" height="60" fill="rgba(255,216,74,.08)" stroke="#ffd84a" stroke-width="3" stroke-dasharray="8 7"/>`;
+  for (const [w, c] of [[16, '#120b08'], [9, '#a8774b']]) {
+    h += `<circle cx="180" cy="310" r="140" fill="none" stroke="${c}" stroke-width="${w}"/>`;
+    for (const [a, b] of EDGES) if (!ARC_EDGES.has(`${a}-${b}`)) h += `<line x1="${P(a)[0]}" y1="${P(a)[1]}" x2="${P(b)[0]}" y2="${P(b)[1]}" stroke="${c}" stroke-width="${w}"/>`;
+  }
+  for (let n = 0; n < 11; n++) h += `<rect x="${P(n)[0] - 8}" y="${P(n)[1] - 8}" width="16" height="16" fill="#d4a473" stroke="#120b08" stroke-width="3"/>`;
+  for (const [a, b, ok] of arrows) {
+    const [x1, y1] = P(a), [x2, y2] = P(b), L = Math.hypot(x2 - x1, y2 - y1), ux = (x2 - x1) / L, uy = (y2 - y1) / L;
+    const sx = x1 + ux * 34, sy = y1 + uy * 34, ex = x2 - ux * (ok ? 30 : 22), ey = y2 - uy * (ok ? 30 : 22);
+    if (ok) h += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="#7dff8a" stroke-width="9" marker-end="url(#ah-ok)"/>`;
+    else {
+      const mx = (sx + ex) / 2, my = (sy + ey) / 2;
+      h += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="#ff6b5a" stroke-width="8" stroke-dasharray="12 8"/>`;
+      h += `<g stroke="#ff6b5a" stroke-width="9"><line x1="${mx - 15}" y1="${my - 15}" x2="${mx + 15}" y2="${my + 15}"/><line x1="${mx + 15}" y1="${my - 15}" x2="${mx - 15}" y2="${my + 15}"/></g>`;
+    }
+  }
+  for (const [n, k] of Object.entries(pcs)) {
+    const file = { p: 'pumpkin_idle', w: 'wisp_idle', pS: 'pumpkin_stuck', wS: 'wisp_stuck' }[k];
+    h += `<image href="img/${file}.png" x="${P(n)[0] - 36}" y="${P(n)[1] - 46}" width="72" height="72" style="image-rendering:pixelated"/>`;
+  }
+  return h + '</svg>';
+}
+const HELP = [
+  { t: '규칙', b: () =>
+    '<p class="hl">차례대로 말 하나를 <b>선을 따라 한 칸</b> 옮겨요.<br>상대 말이 <b>하나도 못 움직이게</b> 가두면 이겨요!</p>' +
+    `<div class="hfig">${miniBoard({ 0: 'wS', 1: 'wS', 3: 'wS', 4: 'p', 5: 'p', 6: 'p' })}</div>` +
+    '<p class="cap">호박 3개가 길을 모두 막아서<br>도깨비불이 꼼짝 못 해요. 호박 승리!</p>' },
+  { t: '움직이는 법', b: () =>
+    '<p class="hl">점선 상자가 내 <b>진영</b>이에요.<br>진영 안에서는 <b>출구 쪽으로만</b> 가요.</p>' +
+    `<div class="hfig">${miniBoard({ 8: 'p', 7: 'p', 10: 'p' }, [[8, 9, true], [7, 9, false]], [560], '-10 360 380 245')}</div>` +
+    '<p class="cap">양 끝 → 가운데 → 원 순서로 나가요.<br>원으로 나온 말은 <b class="no">다시 못 들어가요.</b></p>' +
+    '<ul class="tips"><li><span class="tk pic"><img src="img/pumpkin_move.png" alt=""></span><span>내 말을 누르면 갈 수 있는 자리가 <b>반짝여요</b>. 반짝이는 자리를 누르면 옮겨져요.</span></li></ul>' },
+  { t: '시간과 점수', b: () =>
+    '<ul class="tips">' +
+    '<li><span class="tk">10초</span><span>한 수에 <b>10초</b>! 시간이 지나면 져요.</span></li>' +
+    '<li><span class="tk">30</span><span>한 사람당 <b>30수</b>가 지나도 안 끝나면 비겨요.</span></li>' +
+    '<li><span class="tk pic"><img src="img/icon_win.png" alt=""></span><span>이기면 <b>3점</b>, 비기면 <b>1점</b>. 오늘의 순위는 밤 12시에 새로 시작해요.</span></li>' +
+    '<li><span class="tk pic"><img src="img/gpumpkin_idle.png" alt=""></span><span><b>어제의 1등</b>은 오늘 하루 황금 캐릭터로 나와요!</span></li>' +
+    '<li><span class="tk pic"><img src="img/wisp_move.png" alt=""></span><span>접속한 친구와 자동으로 짝이 지어져요. 호박이 될지 도깨비불이 될지는 그때그때 달라요.</span></li>' +
+    '</ul>' },
+];
+let helpPage = 0;
+function openHelp() { helpPage = 0; renderHelp(); modal('howModal', true); try { localStorage.setItem('hobak:seenHelp', '1'); } catch {} }
+function renderHelp() {
+  const pg = HELP[helpPage], last = helpPage === HELP.length - 1;
+  $('howTitle').textContent = '놀이 방법 · ' + pg.t;
+  $('howBody').innerHTML = pg.b();
+  $('howDots').innerHTML = HELP.map((_, i) => `<i${i === helpPage ? ' class="on"' : ''}></i>`).join('');
+  $('howPrev').hidden = helpPage === 0;
+  $('howNext').textContent = last ? '시작하기' : '다음';
 }
 
 // ---------- 순위표 ----------

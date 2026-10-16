@@ -107,6 +107,24 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
 .foot{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .foot .moves{font-size:12px;color:var(--ink);background:rgba(14,9,7,.85);border:2px solid var(--edge);padding:5px 8px}
 
+/* 놀이 방법 */
+.helpbody{display:flex;flex-direction:column;gap:12px}
+.helpbody .hl,.helpbody .cap{margin:0;font-size:15px;line-height:1.65;text-align:center;text-wrap:balance}
+.helpbody .cap{font-size:14px;color:var(--dim)}
+.helpbody b{font-weight:normal;color:var(--gold)}
+.helpbody b.no{color:#ff8a7a}
+.hfig{background:rgba(10,6,4,.6);border:2px solid var(--edge);padding:8px;display:flex;justify-content:center}
+.hfig svg{width:auto;max-width:100%;height:250px;display:block}
+.tips{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.tips li{display:flex;align-items:center;gap:12px;font-size:14px;line-height:1.5;background:rgba(10,6,4,.6);padding:8px 10px;border:2px solid var(--edge)}
+.tips .tk{flex:none;width:40px;height:40px;display:grid;place-items:center;background:var(--gold);color:var(--dark);font-size:14px}
+.tips .tk img{width:34px;height:34px;object-fit:contain}
+.tips .tk.pic{background:#3a2618}
+.hdots{display:flex;justify-content:center;gap:8px;margin:14px 0 12px}
+.hdots i{width:10px;height:10px;background:#4a3222}
+.hdots i.on{background:var(--gold)}
+.help-acts{display:flex;gap:10px}
+.help-acts .btn{flex:1}
 /* 창 */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
 .modal.on{display:flex}
@@ -184,16 +202,10 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
 </div>
 
 <div class="modal" id="howModal"><div class="box">
-  <h2>놀이 방법</h2>
-  <ol>
-    <li>각자 말 3개를 자기 진영(맨 아래 가로줄)에 두고 시작해요.</li>
-    <li>차례가 되면 말 하나를 선을 따라 <b>한 칸</b> 옮겨요. 말을 누르고, 반짝이는 자리를 누르면 돼요.</li>
-    <li>진영 안에서는 출구 쪽으로만 갈 수 있어요. 양 끝 → 가운데 → 원 순서예요. 진영을 나온 말은 다시 어느 진영에도 들어갈 수 없어요.</li>
-    <li>상대가 움직일 수 있는 말이 하나도 없게 만들면 이겨요.</li>
-    <li>한 수에 10초! 시간이 지나면 져요.</li>
-    <li>한 사람당 30수가 지나도 끝나지 않으면 비겨요. (거의 일어나지 않아요)</li>
-  </ol>
-  <button class="btn" data-close>알겠어요</button>
+  <h2 id="howTitle">놀이 방법</h2>
+  <div class="helpbody" id="howBody"></div>
+  <div class="hdots" id="howDots" aria-hidden="true"></div>
+  <div class="help-acts"><button class="btn sub" id="howPrev">이전</button><button class="btn" id="howNext">다음</button></div>
 </div></div>
 
 <div class="modal" id="resultModal"><div class="box result">
