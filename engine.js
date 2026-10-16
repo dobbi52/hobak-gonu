@@ -13,6 +13,8 @@ export const TURN_MS = 10000;    // 한 수당 10초
 const ADJ = Array.from({ length: 11 }, () => []);
 for (const [a, b] of EDGES) { ADJ[a].push(b); ADJ[b].push(a); }
 const IS_HOME = new Set([...HOME[0], ...HOME[1]]);
+// 진영 안에서는 출구 쪽으로만: 양 끝 → 가운데 → 원
+const EXIT = { 0: 1, 2: 1, 1: 3, 8: 9, 10: 9, 9: 7 };
 
 export function startPos() {
   return { 0: [...HOME[0]], 1: [...HOME[1]] };
@@ -23,8 +25,8 @@ export function targets(pos, player, from) {
   const occ = new Set([...pos[0], ...pos[1]]);
   return ADJ[from].filter(to => {
     if (occ.has(to)) return false;
-    if (!IS_HOME.has(from) && IS_HOME.has(to)) return false; // 진영을 나온 말은 다시 못 들어감
-    return true;
+    if (IS_HOME.has(from)) return to === EXIT[from];         // 진영 안에서는 출구 쪽으로만
+    return !IS_HOME.has(to);                                 // 진영을 나온 말은 다시 못 들어감
   });
 }
 
