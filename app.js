@@ -12,7 +12,7 @@ const img = (i, state) => imgOf(i, state, !!(G && G.gold && G.gold[i]));
 
 const TEST = new URLSearchParams(location.search).has('test');
 // 순위표 서버 (Apps Script 배포 주소)
-const APPS_URL = TEST ? '/__apps' : '';
+const APPS_URL = TEST ? '/__apps' : 'https://script.google.com/macros/s/AKfycbx7dbsnBvLazMlwW_5NCKWu9yc62TC9VMcRDyOu-L6Ce2FspWnwLP9hfph_y2v4EFQ2/exec';
 const AUTH_SRC = TEST ? '/__arcade-auth.js' : 'https://dobbi52.github.io/games/arcade-auth.js';
 
 // 판 좌표 (1번 진영이 아래쪽인 기준)
