@@ -172,6 +172,9 @@ async function requeue(msg) {
 function onGame(g) {
   if (!G || !g) return;
   const first = !G.data;
+  G.server = g;
+  if (G.pending != null && g.status === 'play' && g.ply < G.pending) return; // 내가 방금 둔 수가 아직 반영 전
+  G.pending = null;
   G.data = g;
   G.idx = g.p[0].uid === uid ? 0 : 1;
   if (first) setupGameScreen();
@@ -230,8 +233,6 @@ function tick() {
   $('oppClock').textContent = mine ? '' : sec;
   $('meClock').classList.toggle('low', mine && sec <= 3);
   $('oppClock').classList.toggle('low', !mine && sec <= 3);
-  $('meT').style.width = mine ? (left / TURN_MS * 100) + '%' : '0';
-  $('oppT').style.width = mine ? '0' : (left / TURN_MS * 100) + '%';
   // 시간 초과: 내 차례면 바로, 상대 차례면 여유를 두고 판정 (상대가 나가 버린 경우 대비)
   if (mine && now > g.turnStart + TURN_MS + 300) endGame({ winner: 1 - G.idx, reason: 'timeout' }, g.ply);
   if (!mine && now > g.turnStart + TURN_MS + 2500) endGame({ winner: G.idx, reason: 'timeout' }, g.ply);
@@ -259,8 +260,15 @@ async function doMove(from, to) {
   if (g.status !== 'play' || g.turn !== idx || !isLegal(norm(g.pos), idx, from, to)) return;
   moving = true;
   sel = null;
+  // 누르는 즉시 화면에서 먼저 움직임 (서버 저장은 뒤에서)
+  const r0 = applyMove(norm(g.pos), idx, from, to, ply);
+  G.pending = r0.ply;
+  G.data = { ...g, pos: r0.pos, ply: r0.ply, turn: 1 - idx, turnStart: net.now() };
+  moving = false;
+  render();
+  let ok = false;
   try {
-    await net.tx('games/' + G.gid, cur => {
+    const res = await net.tx('games/' + G.gid, cur => {
       if (!cur || cur.status !== 'play' || cur.turn !== idx || cur.ply !== ply) return;
       const pos = norm(cur.pos);
       if (!isLegal(pos, idx, from, to)) return;
@@ -270,9 +278,16 @@ async function doMove(from, to) {
       if (r.result) { cur.status = 'done'; cur.result = r.result; }
       return cur;
     });
-  } catch (e) { console.warn(e); toast('연결이 불안정해요'); }
-  moving = false;
-  render();
+    ok = res.committed;
+  } catch (e) { console.warn(e); }
+  if (!G) return;
+  if (!ok && G.pending != null) {
+    // 저장 실패: 서버 상태로 되돌림
+    G.pending = null;
+    if (G.server) G.data = G.server;
+    toast('수를 두지 못했어요');
+    render();
+  }
 }
 
 // ---------- 화면 그리기 ----------
@@ -429,7 +444,7 @@ function showResult() {
     text = { stuck: '내 말이 모두 갇혔어요', timeout: '시간 안에 두지 못했어요', leave: '기권했어요' }[r.reason] || '';
   }
   for (const id of ['meClock', 'oppClock']) $(id).textContent = '';
-  for (const id of ['meT', 'oppT']) $(id).style.width = '0';
+  for (const id of ['meT', 'oppT']) $(id).style.transform = 'scaleX(0)';
   $('resImg').src = pic; $('resTitle').textContent = title; $('resText').textContent = text;
   $('resTitle').style.color = r.draw ? 'var(--ink)' : r.winner === me ? 'var(--gold)' : '#9fd7ff';
   modal('resultModal', true);
@@ -437,4 +452,14 @@ function showResult() {
   setTimeout(() => { if (!matching && !G) net.offline(); }, 1500);
 }
 
+// 시간 막대는 화면 새로 그릴 때마다 부드럽게
+(function frame() {
+  if (G && G.data && G.data.status === 'play') {
+    const g = G.data, mine = g.turn === G.idx;
+    const f = Math.max(0, Math.min(1, (g.turnStart + TURN_MS - net.now()) / TURN_MS));
+    $('meT').style.transform = `scaleX(${mine ? f : 0})`;
+    $('oppT').style.transform = `scaleX(${mine ? 0 : f})`;
+  }
+  requestAnimationFrame(frame);
+})();
 boot();
