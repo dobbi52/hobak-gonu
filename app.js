@@ -6,7 +6,14 @@ const CHAR = [
   { key: 'pumpkin', name: '호박' },
   { key: 'wisp', name: '도깨비불' },
 ];
-const img = (i, state) => `img/${CHAR[i].key}_${state}.png`;
+// 어제의 1등은 황금 캐릭터 (gold: 그 쪽이 1등인지)
+const imgOf = (i, state, gold) => `img/${gold ? 'g' : ''}${CHAR[i].key}_${state}.png`;
+const img = (i, state) => imgOf(i, state, !!(G && G.gold && G.gold[i]));
+
+const TEST = new URLSearchParams(location.search).has('test');
+// 순위표 서버 (Apps Script 배포 주소)
+const APPS_URL = TEST ? '/__apps' : '';
+const AUTH_SRC = TEST ? '/__arcade-auth.js' : 'https://dobbi52.github.io/games/arcade-auth.js';
 
 // 판 좌표 (1번 진영이 아래쪽인 기준)
 const XY = [[40, 60], [180, 60], [320, 60], [180, 170], [40, 310], [180, 310], [320, 310], [180, 450], [40, 560], [180, 560], [320, 560]];
@@ -15,6 +22,8 @@ const ARC_EDGES = new Set(['3-6', '6-7', '7-4', '4-3']);
 
 let net, uid;
 let myName = '';
+let champ = '';      // 어제의 1등 닉네임
+let lastBoard = null;
 let matching = false, hb = null, pairUnsub = null, waitStart = 0;
 let G = null; // 진행 중인 게임
 let sel = null;
@@ -37,37 +46,124 @@ function waitConnected(ms) {
 }
 
 // ---------- 시작 ----------
+function loadScript(src) {
+  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+}
+const auth = () => (window.ArcadeAuth ? window.ArcadeAuth.get() : null);
+const AUTH_OPTS = { game: 'hobak', gameName: '호박 고누', color: '#ff9a2e' };
+
+function drawAccount() {
+  const a = auth();
+  if (a) {
+    $('acctWho').innerHTML = `<b>${esc(a.nick)}</b> 님`;
+    $('acctBtn').textContent = '계정';
+    $('startBtn').textContent = '대전 시작';
+  } else {
+    $('acctWho').textContent = '생각 오락실 계정으로 해요';
+    $('acctBtn').textContent = '로그인';
+    $('startBtn').textContent = '로그인하고 시작';
+  }
+  const meChamp = a && champ && a.nick === champ;
+  $('duoA').src = imgOf(0, 'idle', meChamp); $('duoB').src = imgOf(1, 'idle', meChamp);
+}
+const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 async function boot() {
-  try { myName = localStorage.getItem('hobakName') || ''; } catch {}
-  $('nick').value = myName;
   $('howBtn').onclick = () => modal('howModal', true);
   $('startBtn').onclick = onStart;
+  $('acctBtn').onclick = () => window.ArcadeAuth && window.ArcadeAuth.open(AUTH_OPTS);
   $('cancelBtn').onclick = cancelMatching;
   $('leaveBtn').onclick = () => { if (G && G.data?.status === 'play') endGame({ winner: 1 - G.idx, reason: 'leave' }); };
   $('againBtn').onclick = () => { modal('resultModal', false); startMatching(); };
-  $('homeBtn').onclick = () => { modal('resultModal', false); show('home'); };
+  $('homeBtn').onclick = () => { modal('resultModal', false); goHome(); };
   $('startBtn').disabled = true;
+  if (TEST) document.body.insertAdjacentHTML('beforeend', '<div class="testtag">시험 모드</div>');
+  drawBoardBase();
+  loadBoard();
+  setInterval(() => { if ($('home').classList.contains('on') && !document.hidden) loadBoard(); }, 60000);
+  try {
+    await loadScript(AUTH_SRC);
+    window.ArcadeAuth.onChange(() => { drawAccount(); loadBoard(); });
+    drawAccount();
+    if (window.ArcadeAuth.refresh) window.ArcadeAuth.refresh();
+  } catch (e) {
+    console.error(e);
+    $('homeErr').textContent = '로그인 기능을 불러오지 못했어요. 새로고침해 주세요.';
+    return;
+  }
   try {
     net = await createNet();
     uid = net.uid;
-    if (new URLSearchParams(location.search).has('test')) document.body.insertAdjacentHTML('beforeend', '<div class="testtag">시험 모드</div>');
     $('startBtn').disabled = false;
   } catch (e) {
     console.error(e);
     $('homeErr').textContent = '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.';
   }
-  drawBoardBase();
 }
 
+function goHome() { show('home'); drawAccount(); loadBoard(); }
+
 function onStart() {
-  const n = $('nick').value.trim();
-  if (n.length < 2 || n.length > 8) { $('homeErr').textContent = '닉네임은 2~8자로 써 주세요.'; return; }
   $('homeErr').textContent = '';
-  myName = n;
-  try { localStorage.setItem('hobakName', n); } catch {}
+  const a = auth();
+  if (!a) { window.ArcadeAuth.open({ ...AUTH_OPTS, onPlay: () => onStart() }); return; }
+  myName = a.nick;
   startMatching();
 }
-$('nick').addEventListener('input', () => { $('homeErr').textContent = ''; });
+
+// ---------- 순위표 ----------
+async function apps(action, data) {
+  if (!APPS_URL) return { ok: false, error: '순위표 준비 중' };
+  for (let k = 0; k < 3; k++) {
+    try {
+      const r = await fetch(APPS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action, ...data }) });
+      const j = await r.json();
+      if (j.ok || !j.retry) return j;
+    } catch (e) {}
+    await sleep(1200 * (k + 1));
+  }
+  return { ok: false, error: '순위표 서버에 연결하지 못했어요' };
+}
+
+async function loadBoard() {
+  const a = auth();
+  const j = await apps('board', { nick: a ? a.nick : '' });
+  if (!j.ok) { if (!lastBoard) $('rankList').innerHTML = `<div class="empty">${esc(j.error)}</div>`; return; }
+  lastBoard = j;
+  champ = j.champ || '';
+  drawBoard(j);
+  drawAccount();
+}
+
+function drawBoard(j) {
+  const a = auth();
+  $('rankDay').textContent = j.day ? j.day.slice(5).replace('-', '월 ') + '일 · 승 3점 무 1점' : '';
+  $('champLine').innerHTML = j.champ
+    ? `<div class="champ"><img src="img/gpumpkin_idle.png" alt=""><span>어제의 1등 <b>${esc(j.champ)}</b><br>오늘 하루 황금 캐릭터로 나와요!</span></div>` : '';
+  if (!j.top || !j.top.length) {
+    $('rankList').innerHTML = '<div class="empty">아직 오늘 경기가 없어요.<br>첫 승리의 주인공이 되어 보세요!</div>';
+    return;
+  }
+  const row = r => `<li class="${r.rank === 1 ? 'top1' : ''}${a && r.nick === a.nick ? ' me' : ''}"><span class="n">${r.rank}</span><span class="nm">${esc(r.nick)}</span><span class="wdl">${r.w}승 ${r.d}무 ${r.l}패</span><span class="pt">${r.pts}점</span></li>`;
+  let h = j.top.map(row).join('');
+  if (j.me && j.me.rank > j.top.length) h += `<li class="gap">⋯</li>` + row(j.me);
+  $('rankList').innerHTML = `<ol>${h}</ol>`;
+}
+
+async function reportResult(gid) {
+  const a = auth();
+  if (!a) return;
+  $('resScore').textContent = '점수를 기록하는 중…';
+  let j = null;
+  for (let k = 0; k < 3; k++) {          // 경기 기록이 서버에 늦게 보일 수 있어 몇 번 다시 시도
+    j = await apps('report', { nick: a.nick, pin: a.pin, gid });
+    if (j.ok || j.code === 'AUTH' || !APPS_URL) break;
+    await sleep(1500);
+  }
+  if (j && j.ok && j.me) $('resScore').textContent = `오늘 ${j.me.pts}점 · ${j.me.w}승 ${j.me.d}무 ${j.me.l}패 · ${j.me.rank}위`;
+  else if (j && j.code === 'AUTH') $('resScore').textContent = '로그인이 풀려서 점수를 기록하지 못했어요. 다시 로그인해 주세요.';
+  else $('resScore').textContent = APPS_URL ? '점수를 기록하지 못했어요' : '';
+}
 
 // ---------- 매칭 ----------
 async function startMatching() {
@@ -103,7 +199,7 @@ async function lobbyTick() {
     await net.tx('lobby', cur => {
       taken = null;
       const now = net.now();
-      if (cur && cur.uid !== uid && now - cur.t < 15000) { taken = cur; return null; }
+      if (cur && cur.uid !== uid && cur.name !== myName && now - cur.t < 15000) { taken = cur; return null; }
       return { uid, name: myName, t: now };
     });
   } catch (e) { console.warn(e); return; }
@@ -124,7 +220,7 @@ async function cancelMatching() {
   stopMatchingListeners();
   await leaveLobby();
   net.offline();
-  show('home');
+  goHome();
 }
 
 async function onPaired(gid) {
@@ -186,6 +282,8 @@ function onGame(g) {
     show('game');
     for (const id of ['meClock', 'oppClock']) $(id).textContent = '';
     hint(g.turn === G.idx ? '내가 먼저!' : '상대가 먼저!');
+    if (G.gold[1 - G.idx]) toast('상대는 어제의 1등! 황금 ' + CHAR[1 - G.idx].name + '이에요', 2400);
+    else if (G.gold[G.idx]) toast('어제의 1등! 오늘은 황금 ' + CHAR[G.idx].name + '로 나가요', 2400);
   }
   render();
   if (g.status === 'done' && !G.ended) {
@@ -327,12 +425,15 @@ function drawBoardBase() {
 
 function setupGameScreen() {
   const g = G.data, me = G.idx, op = 1 - me;
+  G.gold = { 0: !!champ && g.p[0].name === champ, 1: !!champ && g.p[1].name === champ };
+  $('meCrown').hidden = !G.gold[me]; $('oppCrown').hidden = !G.gold[op];
   // 판 방향: 0번이면 판 전체를 돌려 내 진영을 아래로
   $('lines').setAttribute('transform', me === 0 ? 'rotate(180 180 310)' : '');
   $('meImg').src = img(me, 'idle'); $('oppImg').src = img(op, 'idle');
   $('meName').textContent = g.p[me].name + ' (나)';
   $('oppName').textContent = g.p[op].name;
-  $('meInfo').textContent = CHAR[me].name; $('oppInfo').textContent = CHAR[op].name;
+  $('meInfo').textContent = (G.gold[me] ? '황금 ' : '') + CHAR[me].name + (G.gold[me] ? ' · 어제의 1등' : '');
+  $('oppInfo').textContent = (G.gold[op] ? '황금 ' : '') + CHAR[op].name + (G.gold[op] ? ' · 어제의 1등' : '');
   // 말 만들기 (배열 순서가 곧 말 번호)
   const layer = $('pieces'); layer.innerHTML = ''; $('marks').innerHTML = ''; $('hits').innerHTML = '';
   G.pieceEls = { 0: [], 1: [] };
@@ -343,6 +444,9 @@ function setupGameScreen() {
       el('rect', { class: 'ring', x: -30, y: -30, width: 60, height: 60, fill: 'none', stroke: '#fff', 'stroke-width': 3, 'stroke-dasharray': '8 6' }, gEl);
       const hop = el('g', { class: 'hopper' }, gEl);
       const im = el('image', { href: img(pl, 'idle'), x: -32, y: -42, width: 64, height: 64, style: 'image-rendering:pixelated' }, hop);
+      if (G.gold[pl]) for (const [sx, sy, r] of [[-26, -34, 7], [24, -12, 5]]) {
+        el('path', { class: 'spark', d: `M${sx} ${sy - r}L${sx + r * .3} ${sy - r * .3}L${sx + r} ${sy}L${sx + r * .3} ${sy + r * .3}L${sx} ${sy + r}L${sx - r * .3} ${sy + r * .3}L${sx - r} ${sy}L${sx - r * .3} ${sy - r * .3}Z`, fill: '#fff6b0' }, hop);
+      }
       gEl.addEventListener('click', () => onPieceTap(pl, k));
       G.pieceEls[pl].push({ g: gEl, hop, im, at: null });
     }
@@ -446,6 +550,8 @@ function showResult() {
   for (const id of ['meClock', 'oppClock']) $(id).textContent = '';
   for (const id of ['meT', 'oppT']) $(id).style.transform = 'scaleX(0)';
   $('resImg').src = pic; $('resTitle').textContent = title; $('resText').textContent = text;
+  $('resScore').textContent = '';
+  reportResult(G.gid);
   $('resTitle').style.color = r.draw ? 'var(--ink)' : r.winner === me ? 'var(--gold)' : '#9fd7ff';
   modal('resultModal', true);
   closeGame();
