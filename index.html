@@ -42,6 +42,7 @@ img{image-rendering:pixelated}
 .duo b{font-size:22px;color:var(--gold);margin-bottom:34px}
 @keyframes bob{50%{transform:translateY(-6px)}}
 .acct{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:15px}
+.tier{width:22px;height:22px;object-fit:contain;vertical-align:-5px;margin-right:4px;image-rendering:auto}
 .acct .who{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .acct .who b{color:var(--gold);font-weight:normal}
 /* 오늘의 순위 */
@@ -125,6 +126,27 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
 .hdots i.on{background:var(--gold)}
 .help-acts{display:flex;gap:10px}
 .help-acts .btn{flex:1}
+/* 꾸미기 */
+.deco-tier{display:flex;align-items:center;gap:12px;background:rgba(10,6,4,.6);border:2px solid var(--edge);padding:10px 12px;margin-bottom:12px}
+.deco-tier img{width:52px;height:52px;object-fit:contain}
+.deco-tier .tn{font-size:20px;color:var(--gold)}
+.deco-tier .ts{font-size:12px;color:var(--dim);margin-top:3px;line-height:1.5}
+.deco-tier .pb{height:8px;background:#120b08;border:1px solid var(--edge);margin-top:6px}
+.deco-tier .pb i{display:block;height:100%;background:#7dff8a}
+.deco-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.deco-item{font:inherit;color:var(--ink);background:rgba(10,6,4,.6);border:3px solid var(--edge);padding:6px 4px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px}
+.deco-item.on{border-color:var(--gold);background:rgba(255,216,74,.14)}
+.deco-item.lock{opacity:.45;cursor:default}
+.deco-item .pv{position:relative;width:72px;height:72px}
+.deco-item .pv img{position:absolute;image-rendering:pixelated}
+.deco-item .nm{font-size:13px}
+.deco-item .rq{font-size:11px;color:var(--dim)}
+.deco-item.on .rq{color:var(--gold)}
+.deco-note{font-size:12px;color:var(--dim);line-height:1.6;text-align:center;margin:12px 0}
+.deco-note b{color:var(--gold);font-weight:normal}
+.result .score .up{display:flex;align-items:center;justify-content:center;gap:6px;color:var(--gold);margin-top:6px}
+.result .score .up img{width:28px;height:28px;object-fit:contain;margin:0;display:inline}
+.result .score .meh{color:var(--dim);font-size:12px;margin-top:4px}
 /* 창 */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
 .modal.on{display:flex}
@@ -158,10 +180,10 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
       <div class="title"><h1>호박 고누</h1><p>상대 말을 꼼짝 못 하게 가두면 이겨요</p></div>
       <div class="duo"><img id="duoA" src="img/pumpkin_idle.png" alt=""><b>VS</b><img id="duoB" src="img/wisp_idle.png" alt=""></div>
       <div class="box">
-        <div class="acct"><span class="who" id="acctWho">생각 오락실 계정으로 해요</span><button class="btn sub small" id="acctBtn">로그인</button></div>
+        <div class="acct"><img class="tier" id="acctTier" alt="" hidden><span class="who" id="acctWho">생각 오락실 계정으로 해요</span><button class="btn sub small" id="acctBtn">로그인</button></div>
         <div class="stack">
           <button class="btn" id="startBtn">대전 시작</button>
-          <button class="btn sub" id="howBtn">놀이 방법</button>
+          <div class="help-acts"><button class="btn sub" id="decoBtn">꾸미기</button><button class="btn sub" id="howBtn">놀이 방법</button></div>
         </div>
         <div class="err" id="homeErr"></div>
       </div>
@@ -185,7 +207,7 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
   <section id="game" class="screen">
     <div class="box bar" id="oppBar">
       <img id="oppImg" alt="">
-      <div class="who"><div class="name"><span id="oppName"></span><img class="crown" id="oppCrown" src="img/icon_win.png" alt="어제의 1등" hidden></div><div class="info" id="oppInfo"></div><div class="tbar"><i id="oppT"></i></div></div>
+      <div class="who"><div class="name"><img class="tier" id="oppTier" alt=""><span id="oppName"></span><img class="crown" id="oppCrown" src="img/icon_win.png" alt="어제의 1등" hidden></div><div class="info" id="oppInfo"></div><div class="tbar"><i id="oppT"></i></div></div>
       <div class="clock" id="oppClock"></div>
     </div>
     <div class="board-wrap">
@@ -194,7 +216,7 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
     </div>
     <div class="box bar" id="meBar">
       <img id="meImg" alt="">
-      <div class="who"><div class="name"><span id="meName"></span><img class="crown" id="meCrown" src="img/icon_win.png" alt="어제의 1등" hidden></div><div class="info" id="meInfo"></div><div class="tbar"><i id="meT"></i></div></div>
+      <div class="who"><div class="name"><img class="tier" id="meTier" alt=""><span id="meName"></span><img class="crown" id="meCrown" src="img/icon_win.png" alt="어제의 1등" hidden></div><div class="info" id="meInfo"></div><div class="tbar"><i id="meT"></i></div></div>
       <div class="clock" id="meClock"></div>
     </div>
     <div class="foot"><span class="moves" id="movesInfo"></span><button class="btn sub small" id="leaveBtn">기권하기</button></div>
@@ -217,6 +239,14 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
     <button class="btn" id="againBtn">한 판 더</button>
     <button class="btn sub" id="homeBtn">처음으로</button>
   </div>
+</div></div>
+
+<div class="modal" id="decoModal"><div class="box">
+  <h2>꾸미기</h2>
+  <div class="deco-tier" id="decoTier"></div>
+  <div class="deco-grid" id="decoGrid"></div>
+  <p class="deco-note">등급은 <b>판수</b>, 꾸미기는 <b>이긴 횟수</b>로 열려요.<br>같은 친구와는 하루 5판, 10수 넘게 둔 판만 세어요.</p>
+  <button class="btn" data-close>닫기</button>
 </div></div>
 
 <div class="toast" id="toast"></div>

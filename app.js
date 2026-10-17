@@ -23,6 +23,20 @@ const ARC_EDGES = new Set(['3-6', '6-7', '7-4', '4-3']);
 let net, uid;
 let myName = '';
 let champ = '';      // 어제의 1등 닉네임
+let myTotal = null;  // 내 누적 기록 {games, w, d, l, acc}
+
+// 등급 (누적 판수)과 꾸미기 (누적 승수)
+const TIERS = [[0, '씨앗', 'seed'], [5, '새싹', 'sprout'], [15, '떡잎', 'leaf'], [40, '덩굴', 'vine'], [80, '호박꽃', 'flower'], [150, '큰 호박', 'pumpkin'], [300, '전설의 호박', 'legend']];
+const tierIdx = games => { let i = 0; TIERS.forEach((t, k) => { if ((games || 0) >= t[0]) i = k; }); return i; };
+const tierImg = i => `img/tier_${TIERS[i][2]}.png`;
+const ACCS = [['ribbon', '리본', 3, 44, 31.5], ['straw', '밀짚모자', 10, 55, 31.5], ['glasses', '선글라스', 25, 57, 20.5], ['wizard', '마법사 모자', 50, 51, 44], ['wreath', '꽃 화관', 100, 54, 28]];
+const accOf = k => ACCS.find(a => a[0] === k);
+const eul = w => w + ((w.charCodeAt(w.length - 1) - 0xAC00) % 28 ? '을' : '를');   // 받침에 따라 을/를
+// 아이템 가운데 위치 (말 그림 좌표: 가로 -32~32, 세로 -42~22)
+const ACC_POS = {
+  pumpkin: { ribbon: [14, -36], straw: [0, -37], glasses: [0, -13], wizard: [0, -46], wreath: [0, -35] },
+  wisp: { ribbon: [15, -30], straw: [0, -34], glasses: [0, -8], wizard: [0, -42], wreath: [0, -30] },
+};
 let lastBoard = null;
 let matching = false, hb = null, pairUnsub = null, waitStart = 0;
 let G = null; // 진행 중인 게임
@@ -54,8 +68,10 @@ const AUTH_OPTS = { game: 'hobak', gameName: '호박 고누', color: '#ff9a2e' }
 
 function drawAccount() {
   const a = auth();
+  $('acctTier').hidden = !(a && myTotal);
+  if (a && myTotal) { const ti = tierIdx(myTotal.games); $('acctTier').src = tierImg(ti); $('acctTier').title = TIERS[ti][1]; }
   if (a) {
-    $('acctWho').innerHTML = `<b>${esc(a.nick)}</b> 님`;
+    $('acctWho').innerHTML = `<b>${esc(a.nick)}</b> 님${myTotal ? ` <span style="color:var(--dim);font-size:12px">${TIERS[tierIdx(myTotal.games)][1]}</span>` : ''}`;
     $('acctBtn').textContent = '계정';
     $('startBtn').textContent = '대전 시작';
   } else {
@@ -76,6 +92,7 @@ async function boot() {
   if (!seen) setTimeout(openHelp, 300);
   $('startBtn').onclick = onStart;
   $('acctBtn').onclick = () => window.ArcadeAuth && window.ArcadeAuth.open(AUTH_OPTS);
+  $('decoBtn').onclick = openDeco;
   $('cancelBtn').onclick = cancelMatching;
   $('leaveBtn').onclick = () => { if (G && G.data?.status === 'play') endGame({ winner: 1 - G.idx, reason: 'leave' }); };
   $('againBtn').onclick = () => { modal('resultModal', false); startMatching(); };
@@ -89,6 +106,7 @@ async function boot() {
     await loadScript(AUTH_SRC);
     window.ArcadeAuth.onChange(() => { drawAccount(); loadBoard(); });
     drawAccount();
+    loadBoard();   // 로그인 정보를 읽은 뒤 내 누적 기록까지 다시 받기
     if (window.ArcadeAuth.refresh) window.ArcadeAuth.refresh();
   } catch (e) {
     console.error(e);
@@ -173,6 +191,43 @@ function renderHelp() {
   $('howNext').textContent = last ? '시작하기' : '다음';
 }
 
+// ---------- 꾸미기 창 ----------
+function openDeco() {
+  if (!auth()) { window.ArcadeAuth && window.ArcadeAuth.open(AUTH_OPTS); return; }
+  if (!myTotal) { toast('기록을 불러오는 중이에요. 잠시 뒤 다시 눌러 주세요'); loadBoard(); return; }
+  drawDeco();
+  modal('decoModal', true);
+}
+function drawDeco() {
+  const t = myTotal, ti = tierIdx(t.games), next = TIERS[ti + 1];
+  const pct = next ? Math.round((t.games - TIERS[ti][0]) / (next[0] - TIERS[ti][0]) * 100) : 100;
+  $('decoTier').innerHTML = `<img src="${tierImg(ti)}" alt=""><div style="flex:1"><div class="tn">${TIERS[ti][1]}</div>
+    <div class="ts">누적 ${t.games}판 · ${t.w}승 ${t.d}무 ${t.l}패<br>${next ? `${next[1]}까지 ${next[0] - t.games}판 남았어요` : '가장 높은 등급이에요!'}</div>
+    <div class="pb"><i style="width:${pct}%"></i></div></div>`;
+  const gold = auth() && champ && auth().nick === champ;
+  const pv = (k) => ['pumpkin', 'wisp'].map((c, i) => {
+    const off = i * 36, S = 36 / 64; // 작은 미리보기: 말 그림 64 → 36
+    let h = `<img src="img/${gold ? 'g' : ''}${c}_idle.png" style="left:${off}px;top:${(64 - 64) * S + 18}px;width:36px;height:36px;object-fit:contain" alt="">`;
+    const A = accOf(k);
+    if (A) { const [cx, cy] = ACC_POS[c][k]; h += `<img src="img/acc_${k}.png" style="left:${off + (cx + 32 - A[3] / 2) * S}px;top:${18 + (cy + 42 - A[4] / 2) * S}px;width:${A[3] * S}px;height:${A[4] * S}px" alt="">`; }
+    return h;
+  }).join('');
+  const items = [['', '안 쓰기', 0]].concat(ACCS.map(a => [a[0], a[1], a[2]]));
+  $('decoGrid').innerHTML = items.map(([k, name, need]) => {
+    const lock = t.w < need, on = (t.acc || '') === k;
+    return `<button class="deco-item${on ? ' on' : ''}${lock ? ' lock' : ''}" data-k="${k}" ${lock ? 'disabled' : ''}><span class="pv">${pv(k)}</span><span class="nm">${name}</span><span class="rq">${on ? '쓰는 중' : lock ? `${need}승부터` : need ? `${need}승 달성` : ''}</span></button>`;
+  }).join('');
+  $('decoGrid').querySelectorAll('.deco-item:not(.lock)').forEach(b => b.onclick = () => equip(b.dataset.k));
+}
+async function equip(k) {
+  const a = auth(); if (!a || (myTotal.acc || '') === k) return;
+  const prev = myTotal.acc;
+  myTotal.acc = k; drawDeco();                      // 먼저 바꿔 보여 주고
+  const j = await apps('equip', { nick: a.nick, pin: a.pin, acc: k });
+  if (j.ok && j.total) { myTotal = j.total; drawDeco(); toast(k ? eul(accOf(k)[1]) + ' 썼어요' : '꾸미기를 벗었어요', 1500); }
+  else { myTotal.acc = prev; drawDeco(); toast(j.error || '바꾸지 못했어요'); }
+}
+
 // ---------- 순위표 ----------
 async function apps(action, data) {
   if (!APPS_URL) return { ok: false, error: '순위표 준비 중' };
@@ -193,6 +248,8 @@ async function loadBoard() {
   if (!j.ok) { if (!lastBoard) $('rankList').innerHTML = `<div class="empty">${esc(j.error)}</div>`; return; }
   lastBoard = j;
   champ = j.champ || '';
+  if (a && j.mine) myTotal = j.mine;
+  if (!a) myTotal = null;
   drawBoard(j);
   drawAccount();
 }
@@ -206,7 +263,7 @@ function drawBoard(j) {
     $('rankList').innerHTML = '<div class="empty">아직 오늘 경기가 없어요.<br>첫 승리의 주인공이 되어 보세요!</div>';
     return;
   }
-  const row = r => `<li class="${r.rank === 1 ? 'top1' : ''}${a && r.nick === a.nick ? ' me' : ''}"><span class="n">${r.rank}</span><span class="nm">${esc(r.nick)}</span><span class="wdl">${r.w}승 ${r.d}무 ${r.l}패</span><span class="pt">${r.pts}점</span></li>`;
+  const row = r => `<li class="${r.rank === 1 ? 'top1' : ''}${a && r.nick === a.nick ? ' me' : ''}"><span class="n">${r.rank}</span><span class="nm"><img class="tier" src="${tierImg(tierIdx(r.games || 0))}" alt="">${esc(r.nick)}</span><span class="wdl">${r.w}승 ${r.d}무 ${r.l}패</span><span class="pt">${r.pts}점</span></li>`;
   let h = j.top.map(row).join('');
   if (j.me && j.me.rank > j.top.length) h += `<li class="gap">⋯</li>` + row(j.me);
   $('rankList').innerHTML = `<ol>${h}</ol>`;
@@ -222,7 +279,18 @@ async function reportResult(gid) {
     if (j.ok || j.code === 'AUTH' || !APPS_URL) break;
     await sleep(1500);
   }
-  if (j && j.ok && j.me) $('resScore').textContent = `오늘 ${j.me.pts}점 · ${j.me.w}승 ${j.me.d}무 ${j.me.l}패 · ${j.me.rank}위`;
+  if (j && j.ok && j.me) {
+    let h = `오늘 ${j.me.pts}점 · ${j.me.w}승 ${j.me.d}무 ${j.me.l}패 · ${j.me.rank}위`;
+    if (!j.counted && !j.dup && j.pairN > j.pairLimit) h += `<div class="meh">같은 친구와 오늘 ${j.pairN}번째 경기라 점수에 들어가지 않아요</div>`;
+    else if (j.counted && !j.longEnough) h += '<div class="meh">10수보다 짧은 경기라 등급 판수에는 들어가지 않아요</div>';
+    if (j.before && j.total) {
+      const t0 = tierIdx(j.before.games), t1 = tierIdx(j.total.games);
+      if (t1 > t0) h += `<div class="up"><img src="${tierImg(t1)}" alt="">${TIERS[t1][1]} 등급이 되었어요!</div>`;
+      for (const [k, name, need] of ACCS) if (j.before.w < need && j.total.w >= need) h += `<div class="up"><img src="img/acc_${k}.png" alt="">${eul(name)} 얻었어요! 꾸미기에서 써 보세요</div>`;
+      myTotal = j.total;
+    }
+    $('resScore').innerHTML = h;
+  }
   else if (j && j.code === 'AUTH') $('resScore').textContent = '로그인이 풀려서 점수를 기록하지 못했어요. 다시 로그인해 주세요.';
   else $('resScore').textContent = APPS_URL ? '점수를 기록하지 못했어요' : '';
 }
@@ -360,7 +428,10 @@ function readyStep() {
   const g = G.data;
   if (Date.now() - readyAt < 600) return;
   readyAt = Date.now();
-  if (!(g.ready && g.ready[G.idx])) net.set(`games/${G.gid}/ready/${G.idx}`, true);
+  if (!(g.ready && g.ready[G.idx])) {
+    net.set(`games/${G.gid}/look/${G.idx}`, { t: myTotal ? tierIdx(myTotal.games) : 0, a: (myTotal && myTotal.acc) || '' });
+    net.set(`games/${G.gid}/ready/${G.idx}`, true);
+  }
   if (G.creator && g.ready && g.ready[0] && g.ready[1]) {
     net.tx('games/' + G.gid, cur => {
       if (!cur || cur.status !== 'ready') return;
@@ -509,8 +580,9 @@ function setupGameScreen() {
       if (G.gold[pl]) for (const [sx, sy, r] of [[-26, -34, 7], [24, -12, 5]]) {
         el('path', { class: 'spark', d: `M${sx} ${sy - r}L${sx + r * .3} ${sy - r * .3}L${sx + r} ${sy}L${sx + r * .3} ${sy + r * .3}L${sx} ${sy + r}L${sx - r * .3} ${sy + r * .3}L${sx - r} ${sy}L${sx - r * .3} ${sy - r * .3}Z`, fill: '#fff6b0' }, hop);
       }
+      const acc = el('image', { x: 0, y: 0, width: 0, height: 0, style: 'image-rendering:pixelated', visibility: 'hidden' }, hop);
       gEl.addEventListener('click', () => onPieceTap(pl, k));
-      G.pieceEls[pl].push({ g: gEl, hop, im, at: null });
+      G.pieceEls[pl].push({ g: gEl, hop, im, acc, accKey: null, at: null });
     }
   }
   // 빈 점 누르기
@@ -557,6 +629,17 @@ function render() {
         setTimeout(() => { if (G && !G.ended) P.im.setAttribute('href', img(pl, 'idle')); }, 420);
       }
       P.at = n;
+      const ak = (g.look && g.look[pl] && g.look[pl].a) || '';
+      if (P.accKey !== ak) {
+        P.accKey = ak;
+        const A = accOf(ak);
+        if (A) {
+          const [cx, cy] = ACC_POS[CHAR[pl].key][ak];
+          P.acc.setAttribute('href', `img/acc_${ak}.png`);
+          for (const [kk, v] of Object.entries({ x: cx - A[3] / 2, y: cy - A[4] / 2, width: A[3], height: A[4] })) P.acc.setAttribute(kk, v);
+          P.acc.setAttribute('visibility', 'visible');
+        } else P.acc.setAttribute('visibility', 'hidden');
+      }
       const can = myTurn && pl === me && targets(pos, pl, n).length > 0;
       P.g.classList.toggle('can', can && sel !== n);
       P.g.classList.toggle('sel', sel === n);
@@ -576,6 +659,10 @@ function render() {
   $('oppBar').classList.toggle('turn', g.status === 'play' && g.turn !== me);
   const leftMine = MAX_PLY / 2 - movesMade(g, me);
   const leftOpp = MAX_PLY / 2 - movesMade(g, 1 - me);
+  for (const [pl, id] of [[me, 'meTier'], [1 - me, 'oppTier']]) {
+    const t = g.look && g.look[pl] ? g.look[pl].t || 0 : 0;
+    if ($(id).dataset.t !== String(t)) { $(id).dataset.t = t; $(id).src = tierImg(t); $(id).title = TIERS[t][1]; }
+  }
   $('movesInfo').textContent = `남은 수  나 ${leftMine} · 상대 ${leftOpp}`;
   if (g.status === 'play' && G.shownPly !== g.ply) {
     if (G.shownPly !== -1 && g.turn === me) hint('내 차례!', 700);
