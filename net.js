@@ -50,6 +50,24 @@ class FirebaseNet {
   set(path, v) { return this.D.set(this.D.ref(this.db, path), v); }
   update(path, v) { return this.D.update(this.D.ref(this.db, path), v); }
   on(path, cb) { return this.D.onValue(this.D.ref(this.db, path), s => cb(s.val())); }
+  // 접속자 표시: 연결이 끊기면 서버가 저절로 지움
+  setPresence(state) {
+    const r = this.D.ref(this.db, 'presence/' + this.uid);
+    this.D.onDisconnect(r).remove().catch(() => {});
+    return this.D.set(r, { s: state, t: this.D.serverTimestamp() });
+  }
+  clearPresence() { return this.D.remove(this.D.ref(this.db, 'presence/' + this.uid)); }
+  // 첫 화면용: 연결을 유지하지 않고 한 번만 물어봄
+  async countOnline() {
+    const r = await fetch(firebaseConfig.databaseURL + '/presence.json');
+    const v = await r.json();
+    return countPresence(v);
+  }
+}
+export function countPresence(v) {
+  const c = { play: 0, wait: 0, all: 0 };
+  for (const x of Object.values(v || {})) { c.all++; if (x && x.s === 'play') c.play++; else c.wait++; }
+  return c;
 }
 
 // 시험용: 같이 실행하는 testserver.mjs가 서버 역할 (비교 후 쓰기로 트랜잭션 흉내)
@@ -74,7 +92,7 @@ class MockNet {
     }
   }
   online() { this.isOnline = true; setTimeout(() => this.connSubs.forEach(c => c(true)), 50); }
-  offline() { this.isOnline = false; this.connSubs.forEach(c => c(false)); }
+  offline() { this.clearPresence(); this.isOnline = false; this.connSubs.forEach(c => c(false)); }   // 실제 서버는 연결이 끊기면 저절로 지움
   connected(cb) { this.connSubs.add(cb); cb(this.isOnline); return () => this.connSubs.delete(cb); }
   now() { return Date.now(); }
   newId() { return 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
@@ -89,6 +107,9 @@ class MockNet {
   }
   set(path, v) { return this._post(path, v); }
   async update(path, obj) { for (const [k, v] of Object.entries(obj)) await this._post(path + '/' + k, v); }
+  setPresence(state) { return this._post('presence/' + this.uid, { s: state, t: Date.now() }); }
+  clearPresence() { return this._post('presence/' + this.uid, null); }
+  async countOnline() { return countPresence(await this._get('presence')); }
   on(path, cb) {
     const s = { path, cb, last: undefined };
     this.subs.add(s); this._refresh();

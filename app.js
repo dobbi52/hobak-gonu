@@ -1,5 +1,5 @@
 import { HOME, EDGES, TURN_MS, MAX_PLY, startPos, targets, legalMoves, isLegal, applyMove } from './engine.js';
-import { createNet } from './net.js';
+import { createNet, countPresence } from './net.js';
 import { chooseMove } from './ai.js';
 import { Sound } from './sound.js';
 import { WORN } from './worn.js';
@@ -130,6 +130,7 @@ async function boot() {
   drawBoardBase();
   loadBoard();
   setInterval(() => { if ($('home').classList.contains('on') && !document.hidden) loadBoard(); }, 60000);
+  setInterval(() => { if ($('home').classList.contains('on') && !document.hidden) loadLive(); }, 30000);
   try {
     await loadScript(AUTH_SRC);
     window.ArcadeAuth.onChange(() => { drawAccount(); loadBoard(); });
@@ -145,13 +146,26 @@ async function boot() {
     net = await createNet();
     uid = net.uid;
     $('startBtn').disabled = false;
+    loadLive();
   } catch (e) {
     console.error(e);
     $('homeErr').textContent = '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.';
   }
 }
 
-function goHome() { show('home'); drawAccount(); loadBoard(); }
+function goHome() { show('home'); drawAccount(); loadBoard(); loadLive(); }
+// 첫 화면: 지금 대전 중인 친구 수 (30초마다)
+async function loadLive() {
+  if (!net) return;
+  try {
+    const c = await net.countOnline();
+    $('liveCount').innerHTML = c.play > 0
+      ? `<i></i>지금 <b>${c.play}</b>명 대전 중${c.wait ? ` · <b>${c.wait}</b>명 상대 찾는 중` : ''}`
+      : c.wait > 0 ? `<i></i>지금 <b>${c.wait}</b>명이 상대를 찾고 있어요! 들어가면 바로 대전해요`
+      : '<i class="off"></i>지금 대전 중인 친구가 없어요';
+    $('liveCount').hidden = false;
+  } catch (e) {}
+}
 
 function onStart() {
   $('homeErr').textContent = '';
@@ -341,14 +355,30 @@ async function startMatching() {
   }
   matching = true;
   waitStart = Date.now();
+  net.setPresence('wait').catch(() => {});
+  if (presUnsub) presUnsub();
+  presUnsub = net.on('presence', v => {          // 지금 대전 중인 친구 수 (나는 빼고)
+    const others = { ...(v || {}) }; delete others[uid];
+    waitPlayers = countPresence(others);
+    drawWaitInfo();
+  });
   await net.set('pair/' + uid, null);
   pairUnsub = net.on('pair/' + uid, gid => { if (gid) onPaired(gid); });
   await lobbyTick();
   hb = setInterval(lobbyTick, 4000);
 }
 
+let presUnsub = null, waitPlayers = null;
+function drawWaitInfo() {
+  if (!matching) return;
+  const n = waitPlayers ? waitPlayers.play : 0;
+  $('waitInfo').textContent = n > 0
+    ? `지금 ${n}명이 대전 중이에요. 판이 끝나면 짝이 될 수 있어요!`
+    : Date.now() - waitStart > 20000 ? '지금 접속한 친구가 없어요. 컴퓨터와 연습하며 기다려 볼까요?' : '접속한 친구와 자동으로 짝을 지어요';
+}
 function stopMatchingListeners() {
   matching = false;
+  if (presUnsub) { presUnsub(); presUnsub = null; }
   clearInterval(hb); hb = null;
   if (pairUnsub) { pairUnsub(); pairUnsub = null; }
 }
@@ -370,7 +400,7 @@ async function lobbyTick() {
     stopMatchingListeners();
     await createGame(taken);
   } else if (Date.now() - waitStart > 20000) {
-    $('waitInfo').textContent = '아직 접속한 친구가 없어요. 조금만 더 기다려 볼까요?';
+    drawWaitInfo();
     $('waitAiBtn').hidden = false;
   }
 }
@@ -477,6 +507,7 @@ function onGame(g) {
 
   if (g.status === 'play' && G.shownPly === -1) {
     Sound.play('found');
+    if (!G.local) net.setPresence('play').catch(() => {});
     show('game');
     for (const id of ['meClock', 'oppClock']) $(id).textContent = '';
     hint(g.turn === G.idx ? '내가 먼저!' : '상대가 먼저!');

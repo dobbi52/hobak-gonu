@@ -167,6 +167,12 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
 .sndb.off .x{display:block}
 .sndb.off .w{display:none}
 .foot .snd{margin-left:auto}
+/* 지금 대전 중 */
+#waitInfo{word-break:keep-all;text-wrap:balance;line-height:1.6}
+.live{align-self:center;font-size:13px;color:var(--ink);background:rgba(14,9,7,.85);border:2px solid var(--edge);padding:5px 12px;margin-top:-6px}
+.live b{color:var(--gold);font-weight:normal}
+.live i{display:inline-block;width:8px;height:8px;background:#7dff8a;margin-right:6px;vertical-align:1px;animation:blink 1.2s steps(2) infinite}
+.live i.off{background:#8a7a62;animation:none}
 /* 창 */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
 .modal.on{display:flex}
@@ -200,6 +206,7 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
     <div class="home-main">
       <div class="title"><h1>호박 고누</h1><p>상대 말을 꼼짝 못 하게 가두면 이겨요</p></div>
       <div class="duo"><img id="duoA" src="img/pumpkin_idle.png" alt=""><b>VS</b><img id="duoB" src="img/wisp_idle.png" alt=""></div>
+      <div class="live" id="liveCount" hidden></div>
       <div class="box">
         <div class="acct"><img class="tier" id="acctTier" alt="" hidden><span class="who" id="acctWho">생각 오락실 계정으로 해요</span><button class="btn sub small" id="acctBtn">로그인</button></div>
         <div class="stack">
