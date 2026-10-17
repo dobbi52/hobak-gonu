@@ -147,6 +147,14 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
 .result .score .up{display:flex;align-items:center;justify-content:center;gap:6px;color:var(--gold);margin-top:6px}
 .result .score .up img{width:28px;height:28px;object-fit:contain;margin:0;display:inline}
 .result .score .meh{color:var(--dim);font-size:12px;margin-top:4px}
+/* 컴퓨터와 연습 */
+.ai-opt{font:inherit;color:var(--ink);text-align:left;display:flex;align-items:center;gap:12px;background:rgba(10,6,4,.6);border:3px solid var(--edge);padding:8px 10px;cursor:pointer}
+.ai-opt:hover,.ai-opt:focus{border-color:var(--gold)}
+.ai-opt .pv{position:relative;width:52px;height:52px;flex:none}
+.ai-opt .pv img{position:absolute;left:4px;top:8px;width:44px;height:44px;object-fit:contain;image-rendering:pixelated}
+.ai-opt .pv img.hat{left:11px;top:-4px;width:30px;height:26px}
+.ai-opt b{color:var(--gold);font-weight:normal;font-size:16px}
+.ai-opt small{display:block;color:var(--dim);font-size:12px;margin-top:3px}
 /* 창 */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
 .modal.on{display:flex}
@@ -183,6 +191,7 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
         <div class="acct"><img class="tier" id="acctTier" alt="" hidden><span class="who" id="acctWho">생각 오락실 계정으로 해요</span><button class="btn sub small" id="acctBtn">로그인</button></div>
         <div class="stack">
           <button class="btn" id="startBtn">대전 시작</button>
+          <button class="btn sub" id="aiBtn">컴퓨터와 연습</button>
           <div class="help-acts"><button class="btn sub" id="decoBtn">꾸미기</button><button class="btn sub" id="howBtn">놀이 방법</button></div>
         </div>
         <div class="err" id="homeErr"></div>
@@ -200,6 +209,7 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
       <div style="font-size:20px">상대를 찾는 중<span class="dots"></span></div>
       <div class="wait-pcs"><img src="img/pumpkin_move.png" alt=""><img src="img/wisp_move.png" alt=""></div>
       <div style="color:var(--dim);font-size:13px;margin-bottom:14px" id="waitInfo">접속한 친구와 자동으로 짝을 지어요</div>
+      <button class="btn" id="waitAiBtn" hidden style="margin-bottom:10px">기다리는 동안 컴퓨터와 연습</button>
       <button class="btn sub" id="cancelBtn">그만 찾기</button>
     </div>
   </section>
@@ -247,6 +257,17 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
   <div class="deco-grid" id="decoGrid"></div>
   <p class="deco-note">등급은 <b>판수</b>, 꾸미기는 <b>이긴 횟수</b>로 열려요.<br>같은 친구와는 하루 5판, 10수 넘게 둔 판만 세어요.</p>
   <button class="btn" data-close>닫기</button>
+</div></div>
+
+<div class="modal" id="aiModal"><div class="box">
+  <h2>컴퓨터와 연습</h2>
+  <p class="deco-note" style="margin-top:0">연습 경기는 점수와 기록에 들어가지 않아요.</p>
+  <div class="stack" id="aiOpts">
+    <button class="ai-opt" data-lv="easy"><span class="pv"><img src="img/wisp_idle.png" alt=""></span><span><b>아기 도깨비</b> · 쉬움<small>대충 두지만, 바로 지는 자리는 피해요</small></span></button>
+    <button class="ai-opt" data-lv="normal"><span class="pv"><img src="img/wisp_move.png" alt=""></span><span><b>도깨비</b> · 보통<small>세 수 앞을 내다보고 둬요</small></span></button>
+    <button class="ai-opt" data-lv="hard"><span class="pv"><img src="img/wisp_idle.png" alt=""><img class="hat" src="img/acc_wizard.png" alt=""></span><span><b>도깨비 대장</b> · 어려움<small>완벽하게 둬요. 비기기만 해도 대단해요!</small></span></button>
+  </div>
+  <button class="btn sub" data-close style="margin-top:12px">닫기</button>
 </div></div>
 
 <div class="toast" id="toast"></div>

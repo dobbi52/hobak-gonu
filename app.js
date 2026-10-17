@@ -1,5 +1,6 @@
 import { HOME, EDGES, TURN_MS, MAX_PLY, startPos, targets, legalMoves, isLegal, applyMove } from './engine.js';
 import { createNet } from './net.js';
+import { chooseMove } from './ai.js';
 
 const $ = id => document.getElementById(id);
 const CHAR = [
@@ -21,6 +22,7 @@ const CIRCLE = { cx: 180, cy: 310, r: 140 };
 const ARC_EDGES = new Set(['3-6', '6-7', '7-4', '4-3']);
 
 let net, uid;
+const nowMs = () => (net ? net.now() : Date.now());
 let myName = '';
 let champ = '';      // 어제의 1등 닉네임
 let myTotal = null;  // 내 누적 기록 {games, w, d, l, acc}
@@ -95,7 +97,10 @@ async function boot() {
   $('decoBtn').onclick = openDeco;
   $('cancelBtn').onclick = cancelMatching;
   $('leaveBtn').onclick = () => { if (G && G.data?.status === 'play') endGame({ winner: 1 - G.idx, reason: 'leave' }); };
-  $('againBtn').onclick = () => { modal('resultModal', false); startMatching(); };
+  $('againBtn').onclick = () => { modal('resultModal', false); if (lastPractice) startPractice(lastPractice); else startMatching(); };
+  $('aiBtn').onclick = () => modal('aiModal', true);
+  $('waitAiBtn').onclick = async () => { await cancelMatching(); modal('aiModal', true); };
+  document.querySelectorAll('.ai-opt').forEach(b => b.onclick = () => { modal('aiModal', false); startPractice(b.dataset.lv); });
   $('homeBtn').onclick = () => { modal('resultModal', false); goHome(); };
   $('startBtn').disabled = true;
   if (TEST) document.body.insertAdjacentHTML('beforeend', '<div class="testtag">시험 모드</div>');
@@ -298,6 +303,8 @@ async function reportResult(gid) {
 // ---------- 매칭 ----------
 async function startMatching() {
   show('wait');
+  lastPractice = null;
+  $('waitAiBtn').hidden = true;
   $('waitInfo').textContent = '접속한 친구와 자동으로 짝을 지어요';
   net.online();
   const ok = await waitConnected(8000);
@@ -328,7 +335,7 @@ async function lobbyTick() {
   try {
     await net.tx('lobby', cur => {
       taken = null;
-      const now = net.now();
+      const now = nowMs();
       if (cur && cur.uid !== uid && cur.name !== myName && now - cur.t < 15000) { taken = cur; return null; }
       return { uid, name: myName, t: now };
     });
@@ -339,6 +346,7 @@ async function lobbyTick() {
     await createGame(taken);
   } else if (Date.now() - waitStart > 20000) {
     $('waitInfo').textContent = '아직 접속한 친구가 없어요. 조금만 더 기다려 볼까요?';
+    $('waitAiBtn').hidden = false;
   }
 }
 
@@ -367,10 +375,44 @@ async function createGame(opp) {
   const p = {};
   p[meIdx] = { uid, name: myName };
   p[1 - meIdx] = { uid: opp.uid, name: opp.name };
-  const game = { p, pos: startPos(), turn: Math.random() < 0.5 ? 0 : 1, ply: 0, status: 'ready', ready: { [meIdx]: true }, t: net.now() };
+  const game = { p, pos: startPos(), turn: Math.random() < 0.5 ? 0 : 1, ply: 0, status: 'ready', ready: { [meIdx]: true }, t: nowMs() };
   await net.set('games/' + gid, game);
   await net.set('pair/' + opp.uid, gid);
   joinGame(gid, true);
+}
+
+// ---------- 컴퓨터와 연습 (서버 없이 이 기기 안에서만) ----------
+const AI_LV = { easy: '아기 도깨비', normal: '도깨비', hard: '도깨비 대장' };
+const AI_LV_NAME = { easy: '쉬움', normal: '보통', hard: '어려움' };
+let lastPractice = null;
+function startPractice(level) {
+  closeGame();
+  const me = Math.random() < 0.5 ? 0 : 1, a = auth();
+  const p = { [me]: { uid: 'me', name: a ? a.nick : '나' }, [1 - me]: { uid: 'ai', name: AI_LV[level] } };
+  const look = { [me]: { t: myTotal ? tierIdx(myTotal.games) : 0, a: (myTotal && myTotal.acc) || '' }, [1 - me]: { t: 0, a: level === 'hard' ? 'wizard' : '' } };
+  G = { gid: null, local: true, level, meIdx: me, idx: me, data: null, shownPly: -1, ended: false, pieceEls: null };
+  clearInterval(loop);
+  loop = setInterval(tick, 150);
+  setLocal({ p, look, pos: startPos(), turn: Math.random() < 0.5 ? 0 : 1, ply: 0, status: 'play', turnStart: nowMs() + 800, t: nowMs() });
+  $('oppInfo').textContent = '컴퓨터 · ' + AI_LV_NAME[level];
+}
+function setLocal(state) {
+  onGame(state);
+  if (!G || !G.local || state.status !== 'play' || state.turn === G.idx) return;
+  const token = G, ai = state.turn;
+  setTimeout(() => {           // 생각하는 척 0.6~1.2초
+    if (G !== token || G.data.status !== 'play' || G.data.turn !== ai) return;
+    const m = chooseMove(norm(G.data.pos), ai, G.level, startPos());
+    if (m) localMove(ai, m.f, m.to);
+  }, 600 + Math.random() * 600);
+}
+function localMove(who, from, to) {
+  const g = G.data;
+  if (g.status !== 'play' || g.turn !== who || !isLegal(norm(g.pos), who, from, to)) return;
+  const r = applyMove(norm(g.pos), who, from, to, g.ply);
+  const next = { ...g, pos: r.pos, ply: r.ply, turn: 1 - who, turnStart: nowMs(), last: { from, to, by: who } };
+  if (r.result) { next.status = 'done'; next.result = r.result; }
+  setLocal(next);
 }
 
 // ---------- 게임 ----------
@@ -402,7 +444,7 @@ function onGame(g) {
   if (G.pending != null && g.status === 'play' && g.ply < G.pending) return; // 내가 방금 둔 수가 아직 반영 전
   G.pending = null;
   G.data = g;
-  G.idx = g.p[0].uid === uid ? 0 : 1;
+  G.idx = G.local ? G.meIdx : g.p[0].uid === uid ? 0 : 1;
   if (first) setupGameScreen();
 
   if (g.status === 'ready') { readyStep(); return; }
@@ -435,7 +477,7 @@ function readyStep() {
   if (G.creator && g.ready && g.ready[0] && g.ready[1]) {
     net.tx('games/' + G.gid, cur => {
       if (!cur || cur.status !== 'ready') return;
-      cur.status = 'play'; cur.turnStart = net.now();
+      cur.status = 'play'; cur.turnStart = nowMs();
       return cur;
     });
   }
@@ -444,7 +486,7 @@ function readyStep() {
 function tick() {
   if (!G || !G.data) return;
   const g = G.data;
-  const now = net.now();
+  const now = nowMs();
   if (g.status === 'ready') readyStep();
   if (g.status === 'ready' && Date.now() > G.readyBy) {
     if (G.creator) {
@@ -472,6 +514,7 @@ function tick() {
 let ending = false;
 async function endGame(result, ply) {
   if (!G || ending) return;
+  if (G.local) { if (G.data.status === 'play') setLocal({ ...G.data, status: 'done', result }); return; }
   ending = true;
   const expect = ply ?? G.data.ply;
   try {
@@ -489,12 +532,13 @@ async function doMove(from, to) {
   if (!G || moving) return;
   const g = G.data, idx = G.idx, ply = g.ply;
   if (g.status !== 'play' || g.turn !== idx || !isLegal(norm(g.pos), idx, from, to)) return;
-  moving = true;
   sel = null;
+  if (G.local) { localMove(idx, from, to); return; }
+  moving = true;
   // 누르는 즉시 화면에서 먼저 움직임 (서버 저장은 뒤에서)
   const r0 = applyMove(norm(g.pos), idx, from, to, ply);
   G.pending = r0.ply;
-  G.data = { ...g, pos: r0.pos, ply: r0.ply, turn: 1 - idx, turnStart: net.now() };
+  G.data = { ...g, pos: r0.pos, ply: r0.ply, turn: 1 - idx, turnStart: nowMs() };
   moving = false;
   render();
   let ok = false;
@@ -504,7 +548,7 @@ async function doMove(from, to) {
       const pos = norm(cur.pos);
       if (!isLegal(pos, idx, from, to)) return;
       const r = applyMove(pos, idx, from, to, cur.ply);
-      cur.pos = r.pos; cur.ply = r.ply; cur.turn = 1 - idx; cur.turnStart = net.now();
+      cur.pos = r.pos; cur.ply = r.ply; cur.turn = 1 - idx; cur.turnStart = nowMs();
       cur.last = { from, to, by: idx };
       if (r.result) { cur.status = 'done'; cur.result = r.result; }
       return cur;
@@ -700,18 +744,22 @@ function showResult() {
   for (const id of ['meT', 'oppT']) $(id).style.transform = 'scaleX(0)';
   $('resImg').src = pic; $('resTitle').textContent = title; $('resText').textContent = text;
   $('resScore').textContent = '';
-  reportResult(G.gid);
+  lastPractice = G.local ? G.level : null;
+  if (G.local) {
+    const boss = G.level === 'hard';
+    $('resScore').textContent = boss && r.draw ? '도깨비 대장과 비겼어요! 정말 대단해요' : boss && r.winner === me ? '도깨비 대장을 이겼어요!!' : '연습 경기라 점수에는 들어가지 않아요';
+  } else reportResult(G.gid);
   $('resTitle').style.color = r.draw ? 'var(--ink)' : r.winner === me ? 'var(--gold)' : '#9fd7ff';
   modal('resultModal', true);
   closeGame();
-  setTimeout(() => { if (!matching && !G) net.offline(); }, 1500);
+  setTimeout(() => { if (net && !matching && !G) net.offline(); }, 1500);
 }
 
 // 시간 막대는 화면 새로 그릴 때마다 부드럽게
 (function frame() {
   if (G && G.data && G.data.status === 'play') {
     const g = G.data, mine = g.turn === G.idx;
-    const f = Math.max(0, Math.min(1, (g.turnStart + TURN_MS - net.now()) / TURN_MS));
+    const f = Math.max(0, Math.min(1, (g.turnStart + TURN_MS - nowMs()) / TURN_MS));
     $('meT').style.transform = `scaleX(${mine ? f : 0})`;
     $('oppT').style.transform = `scaleX(${mine ? 0 : f})`;
   }
