@@ -52,7 +52,7 @@ const tierImg = i => `img/tier_${TIERS[i][2]}.png`;
 const ACCS = [['ribbon', '리본', 3, 44, 31.5], ['straw', '밀짚모자', 10, 55, 31.5], ['glasses', '선글라스', 25, 57, 20.5], ['wizard', '마법사 모자', 50, 51, 44], ['wreath', '꽃 화관', 100, 54, 28]];
 const accOf = k => ACCS.find(a => a[0] === k);
 const eul = w => w + ((w.charCodeAt(w.length - 1) - 0xAC00) % 28 ? '을' : '를');   // 받침에 따라 을/를
-let lastBoard = null;
+let lastBoard = null, boardErr = '';
 let matching = false, hb = null, pairUnsub = null, waitStart = 0;
 let G = null; // 진행 중인 게임
 let sel = null;
@@ -238,11 +238,17 @@ function renderHelp() {
 }
 
 // ---------- 꾸미기 창 ----------
-function openDeco() {
-  if (!auth()) { window.ArcadeAuth && window.ArcadeAuth.open(AUTH_OPTS); return; }
-  if (!myTotal) { toast('기록을 불러오는 중이에요. 잠시 뒤 다시 눌러 주세요'); loadBoard(); return; }
-  drawDeco();
+async function openDeco() {
+  if (!auth()) { window.ArcadeAuth && window.ArcadeAuth.open({ ...AUTH_OPTS, onPlay: () => openDeco() }); return; }
   modal('decoModal', true);
+  if (myTotal) { drawDeco(); return; }
+  // 아직 내 기록을 못 받았으면 창 안에서 불러오기
+  $('decoTier').innerHTML = '<div class="ts" style="padding:8px">내 기록을 불러오는 중…</div>';
+  $('decoGrid').innerHTML = '';
+  await loadBoard();
+  if (!$('decoModal').classList.contains('on')) return;
+  if (myTotal) drawDeco();
+  else $('decoTier').innerHTML = `<div class="ts" style="padding:8px;color:#ff8a7a">내 기록을 불러오지 못했어요. 잠시 뒤 다시 열어 주세요.<br><small>(${esc(boardErr || '서버 응답 없음')})</small></div>`;
 }
 function drawDeco() {
   const t = myTotal, ti = tierIdx(t.games), next = TIERS[ti + 1];
@@ -297,7 +303,8 @@ async function apps(action, data) {
 async function loadBoard() {
   const a = auth();
   const j = await apps('board', { nick: a ? a.nick : '' });
-  if (!j.ok) { if (!lastBoard) $('rankList').innerHTML = `<div class="empty">${esc(j.error)}</div>`; return; }
+  if (!j.ok) { boardErr = j.error; if (!lastBoard) $('rankList').innerHTML = `<div class="empty">${esc(j.error)}</div>`; return; }
+  boardErr = j.mine || !a ? '' : '서버에 누적 기록이 없어요 (새 코드 배포 확인)';
   lastBoard = j;
   leader = j.top && j.top[0] && j.top[0].pts > 0 ? j.top[0].nick : '';
   if (a && j.mine) myTotal = j.mine;
