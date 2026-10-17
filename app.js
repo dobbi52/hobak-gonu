@@ -2,6 +2,7 @@ import { HOME, EDGES, TURN_MS, MAX_PLY, startPos, targets, legalMoves, isLegal, 
 import { createNet } from './net.js';
 import { chooseMove } from './ai.js';
 import { Sound } from './sound.js';
+import { WORN } from './worn.js';
 
 const $ = id => document.getElementById(id);
 const CHAR = [
@@ -11,6 +12,18 @@ const CHAR = [
 // 어제의 1등은 황금 캐릭터 (gold: 그 쪽이 1등인지)
 const imgOf = (i, state, gold) => `img/${gold ? 'g' : ''}${CHAR[i].key}_${state}.png`;
 const img = (i, state) => imgOf(i, state, !!(G && G.gold && G.gold[i]));
+// 말 그림: 황금이면 황금 그대로, 꾸미기를 썼으면 꾸미기 쓴 그림 (위치·크기가 조금씩 달라서 함께 정함)
+function wornOf(charKey, acc, state) { const b = acc && WORN[`${charKey}_${acc}_${state}`]; return b ? { href: `img/worn/${charKey}_${acc}_${state}.png`, box: b } : null; }
+function setSprite(P, pl, state) {
+  const gold = !!(G && G.gold && G.gold[pl]);
+  const acc = !gold && G && G.data && G.data.look && G.data.look[pl] ? G.data.look[pl].a : '';
+  const w = wornOf(CHAR[pl].key, acc, state);
+  const [href, box] = w ? [w.href, w.box] : [img(pl, state), [-32, -42, 64, 64]];
+  P.im.setAttribute('href', href);
+  P.im.setAttribute('x', box[0]); P.im.setAttribute('y', box[1]); P.im.setAttribute('width', box[2]); P.im.setAttribute('height', box[3]);
+  P.im.setAttribute('preserveAspectRatio', w ? 'none' : 'xMidYMid meet');
+  P.state = state;
+}
 
 const TEST = new URLSearchParams(location.search).has('test');
 // 순위표 서버 (Apps Script 배포 주소)
@@ -35,11 +48,6 @@ const tierImg = i => `img/tier_${TIERS[i][2]}.png`;
 const ACCS = [['ribbon', '리본', 3, 44, 31.5], ['straw', '밀짚모자', 10, 55, 31.5], ['glasses', '선글라스', 25, 57, 20.5], ['wizard', '마법사 모자', 50, 51, 44], ['wreath', '꽃 화관', 100, 54, 28]];
 const accOf = k => ACCS.find(a => a[0] === k);
 const eul = w => w + ((w.charCodeAt(w.length - 1) - 0xAC00) % 28 ? '을' : '를');   // 받침에 따라 을/를
-// 아이템 가운데 위치 (말 그림 좌표: 가로 -32~32, 세로 -42~22)
-const ACC_POS = {
-  pumpkin: { ribbon: [14, -36], straw: [0, -37], glasses: [0, -13], wizard: [0, -46], wreath: [0, -35] },
-  wisp: { ribbon: [15, -30], straw: [0, -34], glasses: [0, -8], wizard: [0, -42], wreath: [0, -30] },
-};
 let lastBoard = null;
 let matching = false, hb = null, pairUnsub = null, waitStart = 0;
 let G = null; // 진행 중인 게임
@@ -226,13 +234,14 @@ function drawDeco() {
     <div class="pb"><i style="width:${pct}%"></i></div></div>`;
   const gold = auth() && champ && auth().nick === champ;
   const pv = (k) => ['pumpkin', 'wisp'].map((c, i) => {
-    const off = i * 36, S = 36 / 64; // 작은 미리보기: 말 그림 64 → 36
-    let h = `<img src="img/${gold ? 'g' : ''}${c}_idle.png" style="left:${off}px;top:${(64 - 64) * S + 18}px;width:36px;height:36px;object-fit:contain" alt="">`;
-    const A = accOf(k);
-    if (A) { const [cx, cy] = ACC_POS[c][k]; h += `<img src="img/acc_${k}.png" style="left:${off + (cx + 32 - A[3] / 2) * S}px;top:${18 + (cy + 42 - A[4] / 2) * S}px;width:${A[3] * S}px;height:${A[4] * S}px" alt="">`; }
-    return h;
+    const S = 36 / 64, ox = i * 36 + 18, oy = 18 + 42 * S;   // 말 그림 좌표 (0,0)이 오는 자리
+    const w = !gold && wornOf(c, k, 'idle');
+    const [src, b] = w ? [w.href, w.box] : [`img/${gold ? 'g' : ''}${c}_idle.png`, [-32, -42, 64, 64]];
+    return `<img src="${src}" style="left:${ox + b[0] * S}px;top:${oy + b[1] * S}px;width:${b[2] * S}px;height:${b[3] * S}px;${w ? '' : 'object-fit:contain'}" alt="">`;
   }).join('');
   const items = [['', '안 쓰기', 0]].concat(ACCS.map(a => [a[0], a[1], a[2]]));
+
+  $('decoGold').hidden = !gold;
   $('decoGrid').innerHTML = items.map(([k, name, need]) => {
     const lock = t.w < need, on = (t.acc || '') === k;
     return `<button class="deco-item${on ? ' on' : ''}${lock ? ' lock' : ''}" data-k="${k}" ${lock ? 'disabled' : ''}><span class="pv">${pv(k)}</span><span class="nm">${name}</span><span class="rq">${on ? '쓰는 중' : lock ? `${need}승부터` : need ? `${need}승 달성` : ''}</span></button>`;
@@ -391,7 +400,7 @@ async function createGame(opp) {
   const p = {};
   p[meIdx] = { uid, name: myName };
   p[1 - meIdx] = { uid: opp.uid, name: opp.name };
-  const game = { p, pos: startPos(), turn: Math.random() < 0.5 ? 0 : 1, ply: 0, status: 'ready', ready: { [meIdx]: true }, t: nowMs() };
+  const game = { p, look: { [meIdx]: myLook() }, pos: startPos(), turn: Math.random() < 0.5 ? 0 : 1, ply: 0, status: 'ready', ready: { [meIdx]: true }, t: nowMs() };
   await net.set('games/' + gid, game);
   await net.set('pair/' + opp.uid, gid);
   joinGame(gid, true);
@@ -483,14 +492,13 @@ function onGame(g) {
 
 // 둘 다 들어왔는지 확인하고, 만든 쪽이 게임을 시작시킴 (주기적으로도 다시 확인)
 let readyAt = 0;
+const myLook = () => ({ t: myTotal ? tierIdx(myTotal.games) : 0, a: (myTotal && myTotal.acc) || '' });
 function readyStep() {
   const g = G.data;
   if (Date.now() - readyAt < 600) return;
   readyAt = Date.now();
-  if (!(g.ready && g.ready[G.idx])) {
-    net.set(`games/${G.gid}/look/${G.idx}`, { t: myTotal ? tierIdx(myTotal.games) : 0, a: (myTotal && myTotal.acc) || '' });
-    net.set(`games/${G.gid}/ready/${G.idx}`, true);
-  }
+  if (!(g.look && g.look[G.idx])) net.set(`games/${G.gid}/look/${G.idx}`, myLook());
+  if (!(g.ready && g.ready[G.idx])) net.set(`games/${G.gid}/ready/${G.idx}`, true);
   if (G.creator && g.ready && g.ready[0] && g.ready[1]) {
     net.tx('games/' + G.gid, cur => {
       if (!cur || cur.status !== 'ready') return;
@@ -642,9 +650,8 @@ function setupGameScreen() {
       if (G.gold[pl]) for (const [sx, sy, r] of [[-26, -34, 7], [24, -12, 5]]) {
         el('path', { class: 'spark', d: `M${sx} ${sy - r}L${sx + r * .3} ${sy - r * .3}L${sx + r} ${sy}L${sx + r * .3} ${sy + r * .3}L${sx} ${sy + r}L${sx - r * .3} ${sy + r * .3}L${sx - r} ${sy}L${sx - r * .3} ${sy - r * .3}Z`, fill: '#fff6b0' }, hop);
       }
-      const acc = el('image', { x: 0, y: 0, width: 0, height: 0, style: 'image-rendering:pixelated', visibility: 'hidden' }, hop);
       gEl.addEventListener('click', () => onPieceTap(pl, k));
-      G.pieceEls[pl].push({ g: gEl, hop, im, acc, accKey: null, at: null });
+      G.pieceEls[pl].push({ g: gEl, hop, im, accKey: null, at: null });
     }
   }
   // 빈 점 누르기
@@ -687,27 +694,18 @@ function render() {
       const [x, y] = xy(n);
       P.g.style.transform = `translate(${x}px, ${y}px)`;
       if (P.at !== null && P.at !== n) {
-        P.im.setAttribute('href', img(pl, 'move'));
+        setSprite(P, pl, 'move');
         P.hop.classList.remove('go'); void P.hop.getBBox(); P.hop.classList.add('go');
         Sound.play(CHAR[pl].key === 'pumpkin' ? 'move_pumpkin' : 'move_wisp');
-        setTimeout(() => { if (G && !G.ended) P.im.setAttribute('href', img(pl, 'idle')); }, 420);
+        setTimeout(() => { if (G && !G.ended) setSprite(P, pl, 'idle'); }, 420);
       }
       P.at = n;
       const ak = (g.look && g.look[pl] && g.look[pl].a) || '';
-      if (P.accKey !== ak) {
-        P.accKey = ak;
-        const A = accOf(ak);
-        if (A) {
-          const [cx, cy] = ACC_POS[CHAR[pl].key][ak];
-          P.acc.setAttribute('href', `img/acc_${ak}.png`);
-          for (const [kk, v] of Object.entries({ x: cx - A[3] / 2, y: cy - A[4] / 2, width: A[3], height: A[4] })) P.acc.setAttribute(kk, v);
-          P.acc.setAttribute('visibility', 'visible');
-        } else P.acc.setAttribute('visibility', 'hidden');
-      }
+      if (P.accKey !== ak) { P.accKey = ak; setSprite(P, pl, P.state || 'idle'); }
       const can = myTurn && pl === me && targets(pos, pl, n).length > 0;
       P.g.classList.toggle('can', can && sel !== n);
       P.g.classList.toggle('sel', sel === n);
-      if (done) P.im.setAttribute('href', img(pl, pl === loser ? 'stuck' : 'idle'));
+      if (done) setSprite(P, pl, pl === loser ? 'stuck' : 'idle');
     });
   }
   // 갈 수 있는 자리 표시
