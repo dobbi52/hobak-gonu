@@ -1,6 +1,7 @@
 import { HOME, EDGES, TURN_MS, MAX_PLY, startPos, targets, legalMoves, isLegal, applyMove } from './engine.js';
 import { createNet } from './net.js';
 import { chooseMove } from './ai.js';
+import { Sound } from './sound.js';
 
 const $ = id => document.getElementById(id);
 const CHAR = [
@@ -46,7 +47,21 @@ let sel = null;
 let loop = null;
 
 // ---------- 공통 ----------
-function show(id) { document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id)); }
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id));
+  Sound.bgm(id === 'game' ? 'game' : 'home');
+}
+// 소리: 브라우저는 화면을 한 번 눌러야 소리를 낼 수 있어서, 누를 때마다 깨움
+addEventListener('pointerdown', () => Sound.unlock(), { capture: true });
+document.addEventListener('click', e => { if (e.target.closest('.btn, .ai-opt, .deco-item')) Sound.play('click'); }, { capture: true });
+function drawSoundBtns() {
+  document.querySelectorAll('.sfxT').forEach(b => { b.classList.toggle('off', !Sound.sfx); b.title = '효과음 ' + (Sound.sfx ? '끄기' : '켜기'); b.setAttribute('aria-pressed', Sound.sfx); });
+  document.querySelectorAll('.bgmT').forEach(b => { b.classList.toggle('off', !Sound.music); b.title = '배경음악 ' + (Sound.music ? '끄기' : '켜기'); b.setAttribute('aria-pressed', Sound.music); });
+}
+document.querySelectorAll('.sfxT').forEach(b => b.onclick = () => { Sound.unlock(); Sound.setSfx(!Sound.sfx); drawSoundBtns(); });
+document.querySelectorAll('.bgmT').forEach(b => b.onclick = () => { Sound.unlock(); Sound.setMusic(!Sound.music); Sound.bgm($('game').classList.contains('on') ? 'game' : 'home'); drawSoundBtns(); });
+drawSoundBtns();
+Sound.bgm('home');
 function toast(msg, ms = 2600) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), ms); }
 function modal(id, on) { $(id).classList.toggle('on', on); }
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('.modal').classList.remove('on'));
@@ -295,6 +310,7 @@ async function reportResult(gid) {
       myTotal = j.total;
     }
     $('resScore').innerHTML = h;
+    if (h.includes('class="up"')) setTimeout(() => Sound.play('levelup'), 200);
   }
   else if (j && j.code === 'AUTH') $('resScore').textContent = '로그인이 풀려서 점수를 기록하지 못했어요. 다시 로그인해 주세요.';
   else $('resScore').textContent = APPS_URL ? '점수를 기록하지 못했어요' : '';
@@ -451,6 +467,7 @@ function onGame(g) {
   if (g.status === 'cancel') { requeue('상대가 들어오지 않아 다시 찾을게요'); return; }
 
   if (g.status === 'play' && G.shownPly === -1) {
+    Sound.play('found');
     show('game');
     for (const id of ['meClock', 'oppClock']) $(id).textContent = '';
     hint(g.turn === G.idx ? '내가 먼저!' : '상대가 먼저!');
@@ -502,6 +519,7 @@ function tick() {
   const left = Math.max(0, g.turnStart + TURN_MS - now);
   const mine = g.turn === G.idx;
   const sec = Math.ceil(left / 1000);
+  if (mine && sec <= 3 && sec > 0 && G.lastTick !== g.ply + ':' + sec) { G.lastTick = g.ply + ':' + sec; Sound.play('tick'); }
   $('meClock').textContent = mine ? sec : '';
   $('oppClock').textContent = mine ? '' : sec;
   $('meClock').classList.toggle('low', mine && sec <= 3);
@@ -644,6 +662,7 @@ function onPieceTap(pl, k) {
   const at = g.pos[pl][k];
   if (!targets(norm(g.pos), pl, at).length) { toast('이 말은 지금 갈 곳이 없어요', 1500); return; }
   sel = sel === at ? null : at;
+  if (sel != null) Sound.play('select');
   render();
 }
 function onNodeTap(n) {
@@ -670,6 +689,7 @@ function render() {
       if (P.at !== null && P.at !== n) {
         P.im.setAttribute('href', img(pl, 'move'));
         P.hop.classList.remove('go'); void P.hop.getBBox(); P.hop.classList.add('go');
+        Sound.play(CHAR[pl].key === 'pumpkin' ? 'move_pumpkin' : 'move_wisp');
         setTimeout(() => { if (G && !G.ended) P.im.setAttribute('href', img(pl, 'idle')); }, 420);
       }
       P.at = n;
@@ -709,7 +729,7 @@ function render() {
   }
   $('movesInfo').textContent = `남은 수  나 ${leftMine} · 상대 ${leftOpp}`;
   if (g.status === 'play' && G.shownPly !== g.ply) {
-    if (G.shownPly !== -1 && g.turn === me) hint('내 차례!', 700);
+    if (G.shownPly !== -1 && g.turn === me) { hint('내 차례!', 700); setTimeout(() => Sound.play('myturn'), 250); }
     G.shownPly = g.ply;
   }
 }
@@ -732,12 +752,14 @@ function showResult() {
   if (!G) return;
   const g = G.data, me = G.idx, r = g.result || {};
   let title, text, pic;
-  if (r.draw) { title = '비겼어요'; pic = 'img/icon_draw.png'; text = '30수 동안 아무도 가두지 못했어요'; }
+  if (r.draw) { title = '비겼어요'; pic = 'img/icon_draw.png'; text = '30수 동안 아무도 가두지 못했어요'; Sound.play('draw'); }
   else if (r.winner === me) {
     title = '이겼어요!'; pic = 'img/icon_win.png';
+    Sound.play('win');
     text = { stuck: '상대 말을 모두 가뒀어요', timeout: '상대가 시간 안에 두지 못했어요', leave: '상대가 기권했어요' }[r.reason] || '';
   } else {
     title = '졌어요'; pic = img(me, 'stuck');
+    Sound.play('lose');
     text = { stuck: '내 말이 모두 갇혔어요', timeout: '시간 안에 두지 못했어요', leave: '기권했어요' }[r.reason] || '';
   }
   for (const id of ['meClock', 'oppClock']) $(id).textContent = '';
