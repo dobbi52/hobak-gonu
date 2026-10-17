@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>호박 고누 소리 미리 듣기</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri/dist/galmuri.css">
+<style>
+body{margin:0;background:#1a110d;color:#fdf3dc;font-family:'Galmuri11',system-ui,sans-serif}
+.wrap{max-width:520px;margin:0 auto;padding:20px 16px 40px}
+h1{color:#ff9a2e;font-size:28px;margin:0 0 4px;text-shadow:2px 2px 0 #0e0907}
+p{color:#c9b38f;font-size:13px;line-height:1.6;margin:0 0 16px}
+h2{font-size:17px;color:#ffd84a;margin:22px 0 10px;font-weight:normal}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+button{font:inherit;font-size:15px;color:#fdf3dc;background:#3a2618;border:3px solid #0e0907;box-shadow:inset -3px -3px 0 #24170f,inset 3px 3px 0 #5a3a26;padding:12px 8px;cursor:pointer;text-align:left}
+button small{display:block;color:#c9b38f;font-size:11px;margin-top:3px}
+button.on{background:#ff9a2e;color:#1b120d}
+button.on small{color:#3a2618}
+button:active{transform:translate(2px,2px)}
+</style></head><body><div class="wrap">
+<h1>호박 고누 소리</h1>
+<p>버튼을 눌러 들어 보세요. 마음에 안 드는 소리는 이름을 알려 주시면 고칠게요.<br>(휴대폰은 무음 모드를 꺼야 들려요)</p>
+<h2>배경음악</h2>
+<div class="grid">
+  <button data-bgm="home">첫 화면·기다릴 때<small>3박 · 잔잔한 가을밤</small></button>
+  <button data-bgm="game">대전 중<small>4박 · 경쾌하게</small></button>
+</div>
+<h2>효과음</h2>
+<div class="grid" id="sfx"></div>
+</div>
+<script type="module">
+import { Sound } from './sound.js';
+const LIST = [['select','말 고르기','뽁'],['move_pumpkin','호박 옮기기','통통'],['move_wisp','도깨비불 옮기기','휙'],['myturn','내 차례','딩동'],
+  ['tick','남은 시간 3초','째깍'],['found','상대 찾음','짧은 팡파르'],['win','이겼어요','승리 가락'],['lose','졌어요','시무룩'],['draw','비겼어요','무승부'],
+  ['levelup','등급·아이템 얻음','반짝'],['stuck','말이 갇힘','뿌우'],['click','버튼','딸깍']];
+const box = document.getElementById('sfx');
+LIST.forEach(([k, n, d]) => { const b = document.createElement('button'); b.innerHTML = `${n}<small>${d}</small>`; b.onclick = () => { Sound.unlock(); Sound.play(k); }; box.appendChild(b); });
+let cur = null;
+document.querySelectorAll('[data-bgm]').forEach(b => b.onclick = () => {
+  Sound.unlock();
+  const t = b.dataset.bgm;
+  document.querySelectorAll('[data-bgm]').forEach(x => x.classList.remove('on'));
+  if (cur === t) { cur = null; Sound.setMusic(false); return; }
+  cur = t; b.classList.add('on');
+  if (!Sound.music) Sound.setMusic(true);
+  Sound.bgm(t);
+});
+</script></body></html>
