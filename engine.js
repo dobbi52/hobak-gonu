@@ -8,7 +8,7 @@ export const EDGES = [
   [7, 9], [8, 9], [9, 10],         // 아래 진영과 출구
 ];
 export const MAX_PLY = 60;       // 한 사람당 30수
-export const TURN_MS = 10000;    // 한 수당 10초
+export const TURN_MS = 20000;    // 한 수당 20초
 
 const ADJ = Array.from({ length: 11 }, () => []);
 for (const [a, b] of EDGES) { ADJ[a].push(b); ADJ[b].push(a); }

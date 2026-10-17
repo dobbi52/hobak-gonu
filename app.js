@@ -215,7 +215,7 @@ const HELP = [
     '<ul class="tips"><li><span class="tk pic"><img src="img/pumpkin_move.png" alt=""></span><span>내 말을 누르면 갈 수 있는 자리가 <b>반짝여요</b>. 반짝이는 자리를 누르면 옮겨져요.</span></li></ul>' },
   { t: '시간과 점수', b: () =>
     '<ul class="tips">' +
-    '<li><span class="tk">10초</span><span>한 수에 <b>10초</b>! 시간이 지나면 져요.</span></li>' +
+    '<li><span class="tk">20초</span><span>한 수에 <b>20초</b>! 시간이 지나면 져요.</span></li>' +
     '<li><span class="tk">30</span><span>한 사람당 <b>30수</b>가 지나도 안 끝나면 비겨요.</span></li>' +
     '<li><span class="tk pic"><img src="img/icon_win.png" alt=""></span><span>이기면 <b>3점</b>, 비기면 <b>1점</b>. 오늘의 순위는 밤 12시에 새로 시작해요.</span></li>' +
     '<li><span class="tk pic"><img src="img/gpumpkin_idle.png" alt=""></span><span><b>어제의 1등</b>은 오늘 하루 황금 캐릭터로 나와요!</span></li>' +
