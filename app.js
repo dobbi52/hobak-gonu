@@ -9,7 +9,7 @@ const CHAR = [
   { key: 'pumpkin', name: '호박' },
   { key: 'wisp', name: '도깨비불' },
 ];
-// 어제의 1등은 황금 캐릭터 (gold: 그 쪽이 1등인지)
+// 오늘의 1등은 황금 캐릭터를 쓸 수 있음 (gold: 그 쪽이 황금을 쓰는지)
 const imgOf = (i, state, gold) => `img/${gold ? 'g' : ''}${CHAR[i].key}_${state}.png`;
 const img = (i, state) => imgOf(i, state, !!(G && G.gold && G.gold[i]));
 // 말 그림: 황금이면 황금 그대로, 꾸미기를 썼으면 꾸미기 쓴 그림 (위치·크기가 조금씩 달라서 함께 정함)
@@ -38,7 +38,11 @@ const ARC_EDGES = new Set(['3-6', '6-7', '7-4', '4-3']);
 let net, uid;
 const nowMs = () => (net ? net.now() : Date.now());
 let myName = '';
-let champ = '';      // 어제의 1등 닉네임
+let leader = '';     // 오늘 순위표 1등 닉네임 (실시간)
+const isLeader = () => { const a = auth(); return !!(a && leader && a.nick === leader); };
+const goldOff = () => { try { return localStorage.getItem('hobak:goldOff') === '1'; } catch { return false; } };
+const setGoldOff = v => { try { localStorage.setItem('hobak:goldOff', v ? '1' : '0'); } catch {} };
+const useGold = () => isLeader() && !goldOff();      // 1등이 되면 처음엔 황금을 쓰는 상태
 let myTotal = null;  // 내 누적 기록 {games, w, d, l, acc}
 
 // 등급 (누적 판수)과 꾸미기 (누적 승수)
@@ -104,7 +108,7 @@ function drawAccount() {
     $('acctBtn').textContent = '로그인';
     $('startBtn').textContent = '로그인하고 시작';
   }
-  const meChamp = a && champ && a.nick === champ;
+  const meChamp = useGold();
   $('duoA').src = imgOf(0, 'idle', meChamp); $('duoB').src = imgOf(1, 'idle', meChamp);
 }
 const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -218,7 +222,7 @@ const HELP = [
     '<li><span class="tk">20초</span><span>한 수에 <b>20초</b>! 시간이 지나면 져요.</span></li>' +
     '<li><span class="tk">30</span><span>한 사람당 <b>30수</b>가 지나도 안 끝나면 비겨요.</span></li>' +
     '<li><span class="tk pic"><img src="img/icon_win.png" alt=""></span><span>이기면 <b>3점</b>, 비기면 <b>1점</b>. 오늘의 순위는 밤 12시에 새로 시작해요.</span></li>' +
-    '<li><span class="tk pic"><img src="img/gpumpkin_idle.png" alt=""></span><span><b>어제의 1등</b>은 오늘 하루 황금 캐릭터로 나와요!</span></li>' +
+    '<li><span class="tk pic"><img src="img/gpumpkin_idle.png" alt=""></span><span><b>오늘의 1등</b>은 황금 캐릭터를 쓸 수 있어요! 1등을 빼앗기면 사라져요.</span></li>' +
     '<li><span class="tk pic"><img src="img/wisp_move.png" alt=""></span><span>접속한 친구와 자동으로 짝이 지어져요. 호박이 될지 도깨비불이 될지는 그때그때 달라요.</span></li>' +
     '</ul>' },
 ];
@@ -246,24 +250,29 @@ function drawDeco() {
   $('decoTier').innerHTML = `<img src="${tierImg(ti)}" alt=""><div style="flex:1"><div class="tn">${TIERS[ti][1]}</div>
     <div class="ts">누적 ${t.games}판 · ${t.w}승 ${t.d}무 ${t.l}패<br>${next ? `${next[1]}까지 ${next[0] - t.games}판 남았어요` : '가장 높은 등급이에요!'}</div>
     <div class="pb"><i style="width:${pct}%"></i></div></div>`;
-  const gold = auth() && champ && auth().nick === champ;
   const pv = (k) => ['pumpkin', 'wisp'].map((c, i) => {
+    const gold = k === 'gold';
     const S = 36 / 64, ox = i * 36 + 18, oy = 18 + 42 * S;   // 말 그림 좌표 (0,0)이 오는 자리
-    const w = !gold && wornOf(c, k, 'idle');
+    const w = !gold && k && wornOf(c, k, 'idle');
     const [src, b] = w ? [w.href, w.box] : [`img/${gold ? 'g' : ''}${c}_idle.png`, [-32, -42, 64, 64]];
     return `<img src="${src}" style="left:${ox + b[0] * S}px;top:${oy + b[1] * S}px;width:${b[2] * S}px;height:${b[3] * S}px;${w ? '' : 'object-fit:contain'}" alt="">`;
   }).join('');
-  const items = [['', '안 쓰기', 0]].concat(ACCS.map(a => [a[0], a[1], a[2]]));
-
-  $('decoGold').hidden = !gold;
+  const items = [['', '안 쓰기', 0], ['gold', '황금', 0]].concat(ACCS.map(a => [a[0], a[1], a[2]]));
+  const gold = useGold();
   $('decoGrid').innerHTML = items.map(([k, name, need]) => {
-    const lock = t.w < need, on = (t.acc || '') === k;
-    return `<button class="deco-item${on ? ' on' : ''}${lock ? ' lock' : ''}" data-k="${k}" ${lock ? 'disabled' : ''}><span class="pv">${pv(k)}</span><span class="nm">${name}</span><span class="rq">${on ? '쓰는 중' : lock ? `${need}승부터` : need ? `${need}승 달성` : ''}</span></button>`;
+    const isG = k === 'gold';
+    const lock = isG ? !isLeader() : t.w < need;
+    const on = isG ? gold : !gold && (t.acc || '') === k;
+    const rq = on ? '쓰는 중' : isG ? (lock ? '오늘 1등만' : '1등 특권') : lock ? `${need}승부터` : need ? `${need}승 달성` : '';
+    return `<button class="deco-item${on ? ' on' : ''}${lock ? ' lock' : ''}" data-k="${k}" ${lock ? 'disabled' : ''}><span class="pv">${pv(k)}</span><span class="nm">${name}</span><span class="rq">${rq}</span></button>`;
   }).join('');
   $('decoGrid').querySelectorAll('.deco-item:not(.lock)').forEach(b => b.onclick = () => equip(b.dataset.k));
 }
 async function equip(k) {
-  const a = auth(); if (!a || (myTotal.acc || '') === k) return;
+  const a = auth(); if (!a) return;
+  if (k === 'gold') { setGoldOff(false); drawDeco(); drawAccount(); toast('황금 캐릭터로 나가요!', 1500); return; }
+  if (isLeader() && !goldOff()) { setGoldOff(true); drawAccount(); }    // 1등이지만 다른 꾸미기를 고름
+  if ((myTotal.acc || '') === k) { drawDeco(); return; }
   const prev = myTotal.acc;
   myTotal.acc = k; drawDeco();                      // 먼저 바꿔 보여 주고
   const j = await apps('equip', { nick: a.nick, pin: a.pin, acc: k });
@@ -290,7 +299,7 @@ async function loadBoard() {
   const j = await apps('board', { nick: a ? a.nick : '' });
   if (!j.ok) { if (!lastBoard) $('rankList').innerHTML = `<div class="empty">${esc(j.error)}</div>`; return; }
   lastBoard = j;
-  champ = j.champ || '';
+  leader = j.top && j.top[0] && j.top[0].pts > 0 ? j.top[0].nick : '';
   if (a && j.mine) myTotal = j.mine;
   if (!a) myTotal = null;
   drawBoard(j);
@@ -300,8 +309,8 @@ async function loadBoard() {
 function drawBoard(j) {
   const a = auth();
   $('rankDay').textContent = j.day ? j.day.slice(5).replace('-', '월 ') + '일 · 승 3점 무 1점' : '';
-  $('champLine').innerHTML = j.champ
-    ? `<div class="champ"><img src="img/gpumpkin_idle.png" alt=""><span>어제의 1등 <b>${esc(j.champ)}</b><br>오늘 하루 황금 캐릭터로 나와요!</span></div>` : '';
+  const ld = j.top && j.top[0] && j.top[0].pts > 0 ? j.top[0].nick : '';
+  $('champLine').innerHTML = `<div class="champ"><img src="img/gpumpkin_idle.png" alt=""><span>${ld ? `지금 1등 <b>${esc(ld)}</b> · 황금 캐릭터를 쓸 수 있어요!` : '오늘 1등이 되면 황금 캐릭터를 쓸 수 있어요!'}<br>1등을 빼앗기면 황금도 넘어가요</span></div>`;
   if (!j.top || !j.top.length) {
     $('rankList').innerHTML = '<div class="empty">아직 오늘 경기가 없어요.<br>첫 승리의 주인공이 되어 보세요!</div>';
     return;
@@ -324,6 +333,9 @@ async function reportResult(gid) {
   }
   if (j && j.ok && j.me) {
     let h = `오늘 ${j.me.pts}점 · ${j.me.w}승 ${j.me.d}무 ${j.me.l}패 · ${j.me.rank}위`;
+    const wasLeader = isLeader();
+    if (j.me.rank === 1 && j.me.pts > 0) leader = j.me.nick; else if (leader === j.me.nick) leader = '';
+    if (!wasLeader && isLeader()) { setGoldOff(false); h += '<div class="up"><img src="img/gpumpkin_idle.png" alt="">오늘의 1등! 황금 캐릭터로 나가요</div>'; }
     if (!j.counted && !j.dup && j.pairN > j.pairLimit) h += `<div class="meh">같은 친구와 오늘 ${j.pairN}번째 경기라 점수에 들어가지 않아요</div>`;
     else if (j.counted && !j.longEnough) h += '<div class="meh">10수보다 짧은 경기라 등급 판수에는 들어가지 않아요</div>';
     if (j.before && j.total) {
@@ -444,7 +456,7 @@ function startPractice(level) {
   closeGame();
   const me = Math.random() < 0.5 ? 0 : 1, a = auth();
   const p = { [me]: { uid: 'me', name: a ? a.nick : '나' }, [1 - me]: { uid: 'ai', name: AI_LV[level] } };
-  const look = { [me]: { t: myTotal ? tierIdx(myTotal.games) : 0, a: (myTotal && myTotal.acc) || '' }, [1 - me]: { t: 0, a: level === 'hard' ? 'wizard' : '' } };
+  const look = { [me]: myLook(), [1 - me]: { t: 0, a: level === 'hard' ? 'wizard' : '', g: false } };
   G = { gid: null, local: true, level, meIdx: me, idx: me, data: null, shownPly: -1, ended: false, pieceEls: null };
   clearInterval(loop);
   loop = setInterval(tick, 150);
@@ -501,6 +513,7 @@ function onGame(g) {
   G.data = g;
   G.idx = G.local ? G.meIdx : g.p[0].uid === uid ? 0 : 1;
   if (first) setupGameScreen();
+  else if (G.pieceEls) applyGold();
 
   if (g.status === 'ready') { readyStep(); return; }
   if (g.status === 'cancel') { requeue('상대가 들어오지 않아 다시 찾을게요'); return; }
@@ -511,8 +524,8 @@ function onGame(g) {
     show('game');
     for (const id of ['meClock', 'oppClock']) $(id).textContent = '';
     hint(g.turn === G.idx ? '내가 먼저!' : '상대가 먼저!');
-    if (G.gold[1 - G.idx]) toast('상대는 어제의 1등! 황금 ' + CHAR[1 - G.idx].name + '이에요', 2400);
-    else if (G.gold[G.idx]) toast('어제의 1등! 오늘은 황금 ' + CHAR[G.idx].name + '로 나가요', 2400);
+    if (G.gold[1 - G.idx]) toast('상대는 오늘의 1등! 황금 ' + CHAR[1 - G.idx].name + '이에요', 2400);
+    else if (G.gold[G.idx]) toast('오늘의 1등! 황금 ' + CHAR[G.idx].name + '로 나가요', 2400);
   }
   render();
   if (g.status === 'done' && !G.ended) {
@@ -523,7 +536,7 @@ function onGame(g) {
 
 // 둘 다 들어왔는지 확인하고, 만든 쪽이 게임을 시작시킴 (주기적으로도 다시 확인)
 let readyAt = 0;
-const myLook = () => ({ t: myTotal ? tierIdx(myTotal.games) : 0, a: (myTotal && myTotal.acc) || '' });
+const myLook = () => ({ t: myTotal ? tierIdx(myTotal.games) : 0, a: (myTotal && myTotal.acc) || '', g: useGold() });
 function readyStep() {
   const g = G.data;
   if (Date.now() - readyAt < 600) return;
@@ -657,17 +670,34 @@ function drawBoardBase() {
   }
 }
 
+// 황금 여부는 게임에 적힌 각자의 look.g 로 (나중에 도착해도 반영)
+function applyGold() {
+  const g = G.data, me = G.idx, op = 1 - me;
+  const ng = { 0: !!(g.look && g.look[0] && g.look[0].g), 1: !!(g.look && g.look[1] && g.look[1].g) };
+  const changed = !G.gold || ng[0] !== G.gold[0] || ng[1] !== G.gold[1];
+  G.gold = ng;
+  $('meCrown').hidden = !ng[me]; $('oppCrown').hidden = !ng[op];
+  $('meInfo').textContent = (ng[me] ? '황금 ' : '') + CHAR[me].name + (ng[me] ? ' · 오늘의 1등' : '');
+  if (!G.local) $('oppInfo').textContent = (ng[op] ? '황금 ' : '') + CHAR[op].name + (ng[op] ? ' · 오늘의 1등' : '');
+  if (changed && G.pieceEls) for (const pl of [0, 1]) G.pieceEls[pl].forEach(P => { P.accKey = null; drawSparks(P, pl); });
+  $('meImg').src = img(me, 'idle'); $('oppImg').src = img(op, 'idle');
+}
+function drawSparks(P, pl) {
+  P.hop.querySelectorAll('.spark').forEach(e => e.remove());
+  if (G.gold[pl]) for (const [sx, sy, r] of [[-26, -34, 7], [24, -12, 5]]) {
+    el('path', { class: 'spark', d: `M${sx} ${sy - r}L${sx + r * .3} ${sy - r * .3}L${sx + r} ${sy}L${sx + r * .3} ${sy + r * .3}L${sx} ${sy + r}L${sx - r * .3} ${sy + r * .3}L${sx - r} ${sy}L${sx - r * .3} ${sy - r * .3}Z`, fill: '#fff6b0' }, P.hop);
+  }
+}
 function setupGameScreen() {
   const g = G.data, me = G.idx, op = 1 - me;
-  G.gold = { 0: !!champ && g.p[0].name === champ, 1: !!champ && g.p[1].name === champ };
-  $('meCrown').hidden = !G.gold[me]; $('oppCrown').hidden = !G.gold[op];
+  G.gold = { 0: false, 1: false };
+  applyGold();
   // 판 방향: 0번이면 판 전체를 돌려 내 진영을 아래로
   $('lines').setAttribute('transform', me === 0 ? 'rotate(180 180 310)' : '');
   $('meImg').src = img(me, 'idle'); $('oppImg').src = img(op, 'idle');
   $('meName').textContent = g.p[me].name + ' (나)';
   $('oppName').textContent = g.p[op].name;
-  $('meInfo').textContent = (G.gold[me] ? '황금 ' : '') + CHAR[me].name + (G.gold[me] ? ' · 어제의 1등' : '');
-  $('oppInfo').textContent = (G.gold[op] ? '황금 ' : '') + CHAR[op].name + (G.gold[op] ? ' · 어제의 1등' : '');
+
   // 말 만들기 (배열 순서가 곧 말 번호)
   const layer = $('pieces'); layer.innerHTML = ''; $('marks').innerHTML = ''; $('hits').innerHTML = '';
   G.pieceEls = { 0: [], 1: [] };

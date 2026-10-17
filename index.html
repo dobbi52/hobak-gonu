@@ -237,7 +237,7 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
   <section id="game" class="screen">
     <div class="box bar" id="oppBar">
       <img id="oppImg" alt="">
-      <div class="who"><div class="name"><img class="tier" id="oppTier" alt=""><span id="oppName"></span><img class="crown" id="oppCrown" src="img/icon_win.png" alt="어제의 1등" hidden></div><div class="info" id="oppInfo"></div><div class="tbar"><i id="oppT"></i></div></div>
+      <div class="who"><div class="name"><img class="tier" id="oppTier" alt=""><span id="oppName"></span><img class="crown" id="oppCrown" src="img/icon_win.png" alt="오늘의 1등" hidden></div><div class="info" id="oppInfo"></div><div class="tbar"><i id="oppT"></i></div></div>
       <div class="clock" id="oppClock"></div>
     </div>
     <div class="board-wrap">
@@ -246,7 +246,7 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
     </div>
     <div class="box bar" id="meBar">
       <img id="meImg" alt="">
-      <div class="who"><div class="name"><img class="tier" id="meTier" alt=""><span id="meName"></span><img class="crown" id="meCrown" src="img/icon_win.png" alt="어제의 1등" hidden></div><div class="info" id="meInfo"></div><div class="tbar"><i id="meT"></i></div></div>
+      <div class="who"><div class="name"><img class="tier" id="meTier" alt=""><span id="meName"></span><img class="crown" id="meCrown" src="img/icon_win.png" alt="오늘의 1등" hidden></div><div class="info" id="meInfo"></div><div class="tbar"><i id="meT"></i></div></div>
       <div class="clock" id="meClock"></div>
     </div>
     <div class="foot"><span class="moves" id="movesInfo"></span><span class="snd"><button class="sndb sfxT" aria-label="효과음"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path class="w" d="M11 5.5q2 2.5 0 5M12.8 3.8q3.4 4.2 0 8.4" stroke="currentColor" stroke-width="1.6" fill="none"/><path class="x" d="M10.5 5.5l5 5M15.5 5.5l-5 5" stroke="currentColor" stroke-width="1.8"/></svg></button><button class="sndb bgmT" aria-label="배경음악"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2.5l8-1.5v9.5a2.2 2 0 1 1-1.6-1.9V4.2L7.6 5.1v7.4a2.2 2 0 1 1-1.6-1.9z" fill="currentColor"/><path class="x" d="M1.5 14.5l13-13" stroke="#ff6b5a" stroke-width="2"/></svg></button></span><button class="btn sub small" id="leaveBtn">기권하기</button></div>
@@ -274,7 +274,6 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
 <div class="modal" id="decoModal"><div class="box">
   <h2>꾸미기</h2>
   <div class="deco-tier" id="decoTier"></div>
-  <p class="deco-note" id="decoGold" hidden style="margin:0 0 10px;color:var(--gold)">오늘은 어제의 1등이라 황금 캐릭터로 나가요.<br>고른 꾸미기는 내일부터 보여요.</p>
   <div class="deco-grid" id="decoGrid"></div>
   <p class="deco-note">등급은 <b>판수</b>, 꾸미기는 <b>이긴 횟수</b>로 열려요.<br>같은 친구와는 하루 5판, 10수 넘게 둔 판만 세어요.</p>
   <button class="btn" data-close>닫기</button>
