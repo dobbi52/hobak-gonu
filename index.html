@@ -166,13 +166,31 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
 .sndb.off{color:#8a7a62}
 .sndb.off .x{display:block}
 .sndb.off .w{display:none}
-.foot .snd{margin-left:auto}
+.foot .snd{margin-left:auto;gap:5px}
+.foot .moves{white-space:nowrap}
+#leaveBtn{white-space:nowrap;padding:8px 10px}
+@media (max-width:380px){.sndb{width:30px;height:30px;padding:5px}}
 /* 지금 대전 중 */
 #waitInfo{word-break:keep-all;text-wrap:balance;line-height:1.6}
 .live{align-self:center;font-size:13px;color:var(--ink);background:rgba(14,9,7,.85);border:2px solid var(--edge);padding:5px 12px;margin-top:-6px}
 .live b{color:var(--gold);font-weight:normal}
 .live i{display:inline-block;width:8px;height:8px;background:#7dff8a;margin-right:6px;vertical-align:1px;animation:blink 1.2s steps(2) infinite}
 .live i.off{background:#8a7a62;animation:none}
+/* 감정 표현 */
+#game{position:relative}
+.bub{position:absolute;left:12px;z-index:6;display:flex;align-items:center;gap:8px;max-width:calc(100% - 24px);background:#fdf3dc;color:#2a1b14;border:3px solid var(--edge);box-shadow:3px 3px 0 rgba(0,0,0,.45);padding:6px 12px 6px 8px;font-size:14px;line-height:1.4;opacity:0;transform:scale(.6);transform-origin:20px 0;transition:opacity .18s,transform .25s cubic-bezier(.3,1.6,.5,1);pointer-events:none}
+.bub.on{opacity:1;transform:none}
+.bub img{width:44px;height:44px;object-fit:contain;image-rendering:pixelated;flex:none}
+.bub::before{content:'';position:absolute;left:22px;top:-11px;border:8px solid transparent;border-bottom-color:var(--edge);border-top:0}
+.bub.me{transform-origin:20px 100%}
+.bub.me::before{top:auto;bottom:-11px;border-bottom:0;border-top:8px solid var(--edge)}
+.bub b{font-weight:normal;color:#8a4a12;font-size:12px;display:block}
+.emo-pan{position:absolute;right:0;bottom:56px;z-index:7;background:rgba(27,18,13,.97);border:3px solid var(--edge);box-shadow:inset 0 0 0 2px #5a3a26,4px 4px 0 rgba(0,0,0,.5);padding:10px;width:min(100%,330px)}
+.emo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.emo-grid button{font:inherit;color:var(--ink);background:#2a1b14;border:2px solid var(--edge);padding:6px 2px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px}
+.emo-grid button img{width:40px;height:40px;object-fit:contain;image-rendering:pixelated}
+.emo-grid button:disabled{opacity:.4}
+.emo-hide{display:block;font-size:12px;color:var(--dim);margin-top:8px}
 /* 창 */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
 .modal.on{display:flex}
@@ -235,6 +253,12 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
   </section>
 
   <section id="game" class="screen">
+    <div class="bub" id="bubOpp"></div>
+    <div class="bub me" id="bubMe"></div>
+    <div class="emo-pan" id="emoPan" hidden>
+      <div class="emo-grid" id="emoGrid"></div>
+      <label class="emo-hide"><input type="checkbox" id="emoHide"> 상대가 보낸 감정 표현 숨기기</label>
+    </div>
     <div class="box bar" id="oppBar">
       <img id="oppImg" alt="">
       <div class="who"><div class="name"><img class="tier" id="oppTier" alt=""><span id="oppName"></span><img class="crown" id="oppCrown" src="img/icon_win.png" alt="오늘의 1등" hidden></div><div class="info" id="oppInfo"></div><div class="tbar"><i id="oppT"></i></div></div>
@@ -249,7 +273,7 @@ svg#board{width:100%;height:100%;max-height:100%;overflow:visible}
       <div class="who"><div class="name"><img class="tier" id="meTier" alt=""><span id="meName"></span><img class="crown" id="meCrown" src="img/icon_win.png" alt="오늘의 1등" hidden></div><div class="info" id="meInfo"></div><div class="tbar"><i id="meT"></i></div></div>
       <div class="clock" id="meClock"></div>
     </div>
-    <div class="foot"><span class="moves" id="movesInfo"></span><span class="snd"><button class="sndb sfxT" aria-label="효과음"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path class="w" d="M11 5.5q2 2.5 0 5M12.8 3.8q3.4 4.2 0 8.4" stroke="currentColor" stroke-width="1.6" fill="none"/><path class="x" d="M10.5 5.5l5 5M15.5 5.5l-5 5" stroke="currentColor" stroke-width="1.8"/></svg></button><button class="sndb bgmT" aria-label="배경음악"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2.5l8-1.5v9.5a2.2 2 0 1 1-1.6-1.9V4.2L7.6 5.1v7.4a2.2 2 0 1 1-1.6-1.9z" fill="currentColor"/><path class="x" d="M1.5 14.5l13-13" stroke="#ff6b5a" stroke-width="2"/></svg></button></span><button class="btn sub small" id="leaveBtn">기권하기</button></div>
+    <div class="foot"><span class="moves" id="movesInfo"></span><span class="snd"><button class="sndb" id="emoBtn" aria-label="감정 표현"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12v8H7l-3 3v-3H2z" fill="currentColor"/><g fill="#1b120d"><rect x="5" y="6" width="1.6" height="1.6"/><rect x="9.4" y="6" width="1.6" height="1.6"/></g></svg></button><button class="sndb sfxT" aria-label="효과음"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path class="w" d="M11 5.5q2 2.5 0 5M12.8 3.8q3.4 4.2 0 8.4" stroke="currentColor" stroke-width="1.6" fill="none"/><path class="x" d="M10.5 5.5l5 5M15.5 5.5l-5 5" stroke="currentColor" stroke-width="1.8"/></svg></button><button class="sndb bgmT" aria-label="배경음악"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2.5l8-1.5v9.5a2.2 2 0 1 1-1.6-1.9V4.2L7.6 5.1v7.4a2.2 2 0 1 1-1.6-1.9z" fill="currentColor"/><path class="x" d="M1.5 14.5l13-13" stroke="#ff6b5a" stroke-width="2"/></svg></button></span><button class="btn sub small" id="leaveBtn">기권하기</button></div>
   </section>
 </div>
 

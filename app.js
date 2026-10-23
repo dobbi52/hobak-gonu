@@ -455,6 +455,71 @@ async function createGame(opp) {
   joinGame(gid, true);
 }
 
+// ---------- 감정 표현 ----------
+const EMO = [['hi', '잘 부탁해!'], ['good', '좋은 수다!'], ['oops', '으악, 어렵다…'], ['think', '고민 중이야…'], ['clap', '잘했어!'], ['again', '한 판 더 할래?']];
+const emoLabel = k => (EMO.find(e => e[0] === k) || [k, ''])[1];
+let emoCool = 0;
+const bubTimer = {};
+function showBubble(side, k, text, who) {
+  const b = $(side === 'me' ? 'bubMe' : 'bubOpp');
+  b.innerHTML = `<img src="img/emo/${k}.png" alt=""><span>${who ? `<b>${esc(who)}</b>` : ''}${esc(text)}</span>`;
+  const bar = $(side === 'me' ? 'meBar' : 'oppBar');
+  b.classList.remove('on');
+  if (side === 'me') { b.style.top = ''; b.style.top = (bar.offsetTop - b.offsetHeight - 14) + 'px'; }
+  else b.style.top = (bar.offsetTop + bar.offsetHeight + 14) + 'px';
+  void b.offsetWidth; b.classList.add('on');
+  Sound.play('select');
+  clearTimeout(bubTimer[side]);
+  bubTimer[side] = setTimeout(() => b.classList.remove('on'), Math.max(2600, text.length * 160));
+}
+function hideBubbles() { for (const id of ['bubMe', 'bubOpp']) $(id).classList.remove('on'); }
+function drawEmoPan() {
+  $('emoGrid').innerHTML = EMO.map(([k, t]) => `<button data-k="${k}"><img src="img/emo/${k}.png" alt="">${t}</button>`).join('');
+  $('emoGrid').querySelectorAll('button').forEach(b => b.onclick = () => sendEmote(b.dataset.k));
+  try { $('emoHide').checked = localStorage.getItem('hobak:emoHide') === '1'; } catch {}
+}
+$('emoBtn').onclick = e => { e.stopPropagation(); const p = $('emoPan'); p.hidden = !p.hidden; if (!p.hidden) drawEmoPan(); };
+$('emoHide').onchange = () => { try { localStorage.setItem('hobak:emoHide', $('emoHide').checked ? '1' : '0'); } catch {} if ($('emoHide').checked) $('bubOpp').classList.remove('on'); };
+document.addEventListener('click', e => { if (!e.target.closest('#emoPan, #emoBtn')) $('emoPan').hidden = true; });
+const emoHidden = () => { try { return localStorage.getItem('hobak:emoHide') === '1'; } catch { return false; } };
+function sendEmote(k) {
+  if (!G || !G.data || Date.now() < emoCool) return;
+  emoCool = Date.now() + 3000;                       // 3초에 한 번
+  $('emoPan').hidden = true;
+  showBubble('me', k, emoLabel(k));
+  if (G.local) { aiReply(k); return; }
+  net.set(`games/${G.gid}/emote/${G.idx}`, { k, n: Date.now() }).catch(() => {});
+}
+// 상대가 보낸 감정 표현 받기
+function checkEmote(g) {
+  const e = g.emote && g.emote[1 - G.idx];
+  if (G.emoSeen === undefined) { G.emoSeen = e ? e.n : null; return; }   // 들어오기 전에 보낸 것은 무시
+  if (!e || e.n === G.emoSeen) return;
+  G.emoSeen = e.n;
+  if (emoHidden() || !EMO.some(x => x[0] === e.k)) return;
+  showBubble('opp', e.k, emoLabel(e.k));
+}
+
+// ---------- 컴퓨터 도깨비의 말 ----------
+const AI_LINES = {
+  easy: { start: ['hi', '놀자 놀자! 잘 부탁해~'], oops: ['oops', '히잉, 그 수는 몰랐어!'], adv: ['good', '에헤헤, 이제 내가 막을 거야~'], think: ['think', '천천히 해도 돼~'],
+    win: ['again', '또 놀자~ 한 판 더?'], lose: ['clap', '우와아, 잘한다!'], draw: ['hi', '비겼다! 재밌었어~'] },
+  normal: { start: ['hi', '흐흐, 어디 한번 해 볼까?'], oops: ['oops', '앗, 그 수는 몰랐어!'], adv: ['good', '이제 내 차례지롱~'], think: ['think', '천천히 생각해도 돼~'],
+    win: ['again', '한 판 더 할래?'], lose: ['clap', '우와, 잘했어!'], draw: ['hi', '비겼네! 다음엔 내가 이길 거야~'] },
+  hard: { start: ['hi', '호박 고누라면 자신 있지. 덤벼 보거라!'], oops: ['oops', '호오… 제법이구나!'], adv: ['good', '이제 길이 막혀 갈 게다.'], think: ['think', '서두를 것 없다. 천천히 두거라.'],
+    win: ['again', '한 판 더 겨뤄 보겠느냐?'], lose: ['clap', '허허, 나를 이기다니! 대단하구나!'], draw: ['hi', '비기다니, 제법이구나!'] },
+};
+const AI_REPLY = { hi: ['hi', '반가워!'], good: ['clap', '헤헤, 고마워!'], oops: ['think', '흐흐, 어려울걸?'], think: ['think', '나도 고민 중…'], clap: ['hi', '고마워!'], again: ['again', '좋아, 또 하자!'] };
+function aiSay(ev) {
+  if (!G || !G.local) return;
+  const [k, text] = AI_LINES[G.level][ev];
+  showBubble('opp', k, text, AI_LV[G.level]);
+}
+function aiReply(k) {
+  const token = G;
+  setTimeout(() => { if (G === token && G.data.status === 'play' && AI_REPLY[k]) showBubble('opp', AI_REPLY[k][0], AI_REPLY[k][1], AI_LV[G.level]); }, 1100);
+}
+
 // ---------- 컴퓨터와 연습 (서버 없이 이 기기 안에서만) ----------
 const AI_LV = { easy: '아기 도깨비', normal: '도깨비', hard: '도깨비 대장' };
 const AI_LV_NAME = { easy: '쉬움', normal: '보통', hard: '어려움' };
@@ -469,6 +534,9 @@ function startPractice(level) {
   loop = setInterval(tick, 150);
   setLocal({ p, look, pos: startPos(), turn: Math.random() < 0.5 ? 0 : 1, ply: 0, status: 'play', turnStart: nowMs() + 800, t: nowMs() });
   $('oppInfo').textContent = '컴퓨터 · ' + AI_LV_NAME[level];
+  G.said = { oops: 0, adv: 0, think: -1 };
+  const token = G;
+  setTimeout(() => { if (G === token) aiSay('start'); }, 1300);
 }
 function setLocal(state) {
   onGame(state);
@@ -487,6 +555,12 @@ function localMove(who, from, to) {
   const next = { ...g, pos: r.pos, ply: r.ply, turn: 1 - who, turnStart: nowMs(), last: { from, to, by: who } };
   if (r.result) { next.status = 'done'; next.result = r.result; }
   setLocal(next);
+  // 도깨비가 상황 보고 한마디 (한 판에 종류마다 두 번까지)
+  if (!r.result && G && G.local) {
+    const me = G.idx, ai = 1 - me;
+    if (who === me && legalMoves(r.pos, ai).length <= 1 && G.said.oops < 2) { G.said.oops++; setTimeout(() => aiSay('oops'), 350); }
+    else if (who === ai && legalMoves(r.pos, me).length <= 1 && G.said.adv < 2) { G.said.adv++; setTimeout(() => aiSay('adv'), 450); }
+  }
 }
 
 // ---------- 게임 ----------
@@ -521,6 +595,7 @@ function onGame(g) {
   G.idx = G.local ? G.meIdx : g.p[0].uid === uid ? 0 : 1;
   if (first) setupGameScreen();
   else if (G.pieceEls) applyGold();
+  if (!G.local) checkEmote(g);
 
   if (g.status === 'ready') { readyStep(); return; }
   if (g.status === 'cancel') { requeue('상대가 들어오지 않아 다시 찾을게요'); return; }
@@ -579,6 +654,7 @@ function tick() {
   const mine = g.turn === G.idx;
   const sec = Math.ceil(left / 1000);
   if (mine && sec <= 3 && sec > 0 && G.lastTick !== g.ply + ':' + sec) { G.lastTick = g.ply + ':' + sec; Sound.play('tick'); }
+  if (G.local && mine && now - g.turnStart > 10000 && G.said.think !== g.ply && (G.said.thinkN || 0) < 2) { G.said.think = g.ply; G.said.thinkN = (G.said.thinkN || 0) + 1; aiSay('think'); }
   $('meClock').textContent = mine ? sec : '';
   $('oppClock').textContent = mine ? '' : sec;
   $('meClock').classList.toggle('low', mine && sec <= 3);
@@ -696,6 +772,7 @@ function drawSparks(P, pl) {
   }
 }
 function setupGameScreen() {
+  hideBubbles(); $('emoPan').hidden = true;
   const g = G.data, me = G.idx, op = 1 - me;
   G.gold = { 0: false, 1: false };
   applyGold();
@@ -793,7 +870,8 @@ function render() {
     const t = g.look && g.look[pl] ? g.look[pl].t || 0 : 0;
     if ($(id).dataset.t !== String(t)) { $(id).dataset.t = t; $(id).src = tierImg(t); $(id).title = TIERS[t][1]; }
   }
-  $('movesInfo').textContent = `남은 수  나 ${leftMine} · 상대 ${leftOpp}`;
+  $('movesInfo').textContent = `남은 수 ${leftMine}·${leftOpp}`;
+  $('movesInfo').title = `남은 수: 나 ${leftMine}수, 상대 ${leftOpp}수`;
   if (g.status === 'play' && G.shownPly !== g.ply) {
     if (G.shownPly !== -1 && g.turn === me) { hint('내 차례!', 700); setTimeout(() => Sound.play('myturn'), 250); }
     G.shownPly = g.ply;
@@ -835,7 +913,9 @@ function showResult() {
   lastPractice = G.local ? G.level : null;
   if (G.local) {
     const boss = G.level === 'hard';
-    $('resScore').textContent = boss && r.draw ? '도깨비 대장과 비겼어요! 정말 대단해요' : boss && r.winner === me ? '도깨비 대장을 이겼어요!!' : '연습 경기라 점수에는 들어가지 않아요';
+    const [ek, line] = AI_LINES[G.level][r.draw ? 'draw' : r.winner === me ? 'lose' : 'win'];
+    const praise = boss && r.draw ? '도깨비 대장과 비겼어요! 정말 대단해요' : boss && r.winner === me ? '도깨비 대장을 이겼어요!!' : '연습 경기라 점수에는 들어가지 않아요';
+    $('resScore').innerHTML = `<div class="up" style="color:var(--ink)"><img src="img/emo/${ek}.png" alt="">${esc(AI_LV[G.level])}: “${esc(line)}”</div><div class="meh">${praise}</div>`;
   } else reportResult(G.gid);
   $('resTitle').style.color = r.draw ? 'var(--ink)' : r.winner === me ? 'var(--gold)' : '#9fd7ff';
   modal('resultModal', true);
