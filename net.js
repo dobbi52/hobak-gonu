@@ -57,6 +57,13 @@ class FirebaseNet {
     return this.D.set(r, { s: state, t: this.D.serverTimestamp() });
   }
   clearPresence() { return this.D.remove(this.D.ref(this.db, 'presence/' + this.uid)); }
+  // 대기 줄: 연결이 끊기면 서버가 저절로 줄에서 뺌
+  joinQueue(name) {
+    const r = this.D.ref(this.db, 'queue/' + this.uid);
+    this.D.onDisconnect(r).remove().catch(() => {});
+    return this.D.set(r, { n: name, t: this.D.serverTimestamp(), h: this.D.serverTimestamp() });
+  }
+  beatQueue() { return this.D.update(this.D.ref(this.db, 'queue/' + this.uid), { h: this.D.serverTimestamp() }); }
   // 첫 화면용: 연결을 유지하지 않고 한 번만 물어봄
   async countOnline() {
     const r = await fetch(firebaseConfig.databaseURL + '/presence.json');
@@ -80,8 +87,10 @@ class MockNet {
     new EventSource('/__events').onmessage = () => this._refresh();
     return this.uid;
   }
-  async _get(path) { return (await (await fetch('/__db?p=' + encodeURIComponent(path))).json()).val; }
+  async _hold() { while (this.paused) await new Promise(r => setTimeout(r, 100)); }
+  async _get(path) { await this._hold(); return (await (await fetch('/__db?p=' + encodeURIComponent(path))).json()).val; }
   async _post(path, val, expect) {
+    await this._hold();
     const r = await fetch('/__db', { method: 'POST', body: JSON.stringify({ p: path, val: val ?? null, expect }) });
     return r.status !== 409;
   }
@@ -92,7 +101,9 @@ class MockNet {
     }
   }
   online() { this.isOnline = true; setTimeout(() => this.connSubs.forEach(c => c(true)), 50); }
-  offline() { this.clearPresence(); this.isOnline = false; this.connSubs.forEach(c => c(false)); }   // 실제 서버는 연결이 끊기면 저절로 지움
+  offline() { this.clearPresence(); this._post('queue/' + this.uid, null); this.isOnline = false; this.connSubs.forEach(c => c(false)); }   // 실제 서버는 연결이 끊기면 저절로 지움
+  // 시험용: 연결이 잠깐 끊긴 것처럼
+  drop(ms) { this.isOnline = false; this.connSubs.forEach(c => c(false)); this.clearPresence(); this._post('queue/' + this.uid, null); this.paused = true; setTimeout(() => { this.paused = false; this.online(); }, ms); }
   connected(cb) { this.connSubs.add(cb); cb(this.isOnline); return () => this.connSubs.delete(cb); }
   now() { return Date.now(); }
   newId() { return 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
@@ -109,6 +120,8 @@ class MockNet {
   async update(path, obj) { for (const [k, v] of Object.entries(obj)) await this._post(path + '/' + k, v); }
   setPresence(state) { return this._post('presence/' + this.uid, { s: state, t: Date.now() }); }
   clearPresence() { return this._post('presence/' + this.uid, null); }
+  joinQueue(name) { return this._post('queue/' + this.uid, { n: name, t: Date.now(), h: Date.now() }); }
+  beatQueue() { return this._post('queue/' + this.uid + '/h', Date.now()); }
   async countOnline() { return countPresence(await this._get('presence')); }
   on(path, cb) {
     const s = { path, cb, last: undefined };

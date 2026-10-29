@@ -123,7 +123,7 @@ async function boot() {
   $('acctBtn').onclick = () => window.ArcadeAuth && window.ArcadeAuth.open(AUTH_OPTS);
   $('decoBtn').onclick = openDeco;
   $('cancelBtn').onclick = cancelMatching;
-  $('leaveBtn').onclick = () => { if (G && G.data?.status === 'play') endGame({ winner: 1 - G.idx, reason: 'leave' }); };
+  $('leaveBtn').onclick = () => { if (G && G.data?.status === 'play') endGame({ winner: 1 - G.idx, reason: 'leave', by: G.idx }); };
   $('againBtn').onclick = () => { modal('resultModal', false); if (lastPractice) startPractice(lastPractice); else startMatching(); };
   $('aiBtn').onclick = () => modal('aiModal', true);
   $('waitAiBtn').onclick = async () => { await cancelMatching(); modal('aiModal', true); };
@@ -149,6 +149,13 @@ async function boot() {
   try {
     net = await createNet();
     uid = net.uid;
+    if (TEST) window.__net = net;
+    net.connected(c => {
+      netOn = c;
+      if (c && presState) setPres(presState);   // 다시 연결되면 접속 표시를 다시 남김
+      if (c && matching && queueCache && !queueCache[uid]) net.joinQueue(myName).catch(() => {});
+      drawNetBar();
+    });
     $('startBtn').disabled = false;
     loadLive();
   } catch (e) {
@@ -157,6 +164,7 @@ async function boot() {
   }
 }
 
+function drawNetBar() { $('netBar').classList.toggle('on', !netOn && !!G && !G.local && !G.ended && !!G.data && G.data.status === 'play'); }
 function goHome() { show('home'); drawAccount(); loadBoard(); loadLive(); }
 // 첫 화면: 지금 대전 중인 친구 수 (30초마다)
 async function loadLive() {
@@ -359,6 +367,9 @@ async function reportResult(gid) {
 }
 
 // ---------- 매칭 ----------
+// 대기 줄(queue): 기다리는 사람마다 자리 하나. 연결이 끊기면 서버가 저절로 줄에서 뺌.
+// 짝짓기는 줄 전체를 한 번에 바꾸는 트랜잭션이라, 여러 명이 동시에 눌러도 겹치지 않음.
+let netOn = false, presState = null;
 async function startMatching() {
   show('wait');
   lastPractice = null;
@@ -374,20 +385,25 @@ async function startMatching() {
   }
   matching = true;
   waitStart = Date.now();
-  net.setPresence('wait').catch(() => {});
+  setPres('wait');
   if (presUnsub) presUnsub();
   presUnsub = net.on('presence', v => {          // 지금 대전 중인 친구 수 (나는 빼고)
     const others = { ...(v || {}) }; delete others[uid];
     waitPlayers = countPresence(others);
     drawWaitInfo();
   });
-  await net.set('pair/' + uid, null);
-  pairUnsub = net.on('pair/' + uid, gid => { if (gid) onPaired(gid); });
-  await lobbyTick();
-  hb = setInterval(lobbyTick, 4000);
+  await net.joinQueue(myName).catch(e => console.warn(e));
+  pairUnsub = net.on('queue', onQueue);
+  hb = setInterval(() => {
+    if (!matching) return;
+    if (netOn) net.beatQueue().catch(() => {});
+    tryMatch();
+    if (Date.now() - waitStart > 20000) { drawWaitInfo(); $('waitAiBtn').hidden = false; }
+  }, 4000);
 }
 
 let presUnsub = null, waitPlayers = null;
+function setPres(s) { presState = s; if (s) net.setPresence(s).catch(() => {}); }
 function drawWaitInfo() {
   if (!matching) return;
   const n = waitPlayers ? waitPlayers.play : 0;
@@ -400,59 +416,73 @@ function stopMatchingListeners() {
   if (presUnsub) { presUnsub(); presUnsub = null; }
   clearInterval(hb); hb = null;
   if (pairUnsub) { pairUnsub(); pairUnsub = null; }
+  clearTimeout(tryT);
 }
 
-// 대기 자리가 비었으면 내가 앉고, 다른 친구가 기다리고 있으면 짝이 됨
-async function lobbyTick() {
+let queueCache = null, tryT = null, trying = false;
+function onQueue(q) {
   if (!matching) return;
-  let taken = null;
+  queueCache = q;
+  const me = q && q[uid];
+  if (me && me.m) { onMatched(me); return; }
+  if (!me && netOn) net.joinQueue(myName).catch(() => {});   // 다시 연결됐는데 줄에서 빠져 있으면 다시 섬
+  clearTimeout(tryT);
+  tryT = setTimeout(tryMatch, 200 + Math.random() * 400);       // 여럿이 동시에 시도하지 않게 조금씩 어긋나게
+}
+
+// 줄에서 가장 오래 기다린 친구와 짝을 지음 (나와 상대 자리에 같은 게임 번호를 적음)
+async function tryMatch() {
+  if (!matching || trying || !netOn) return;
+  const q = queueCache || {};
+  const me = q[uid];
+  if (!me || me.m) return;
+  const hasOther = Object.entries(q).some(([k, v]) => k !== uid && v && v.n && !v.m && v.n !== myName);
+  if (!hasOther) return;
+  trying = true;
+  const gid = net.newId();
   try {
-    await net.tx('lobby', cur => {
-      taken = null;
+    await net.tx('queue', cur => {
+      if (!cur) return;
+      const m = cur[uid];
+      if (!m || m.m) return;
       const now = nowMs();
-      if (cur && cur.uid !== uid && cur.name !== myName && now - cur.t < 15000) { taken = cur; return null; }
-      return { uid, name: myName, t: now };
+      const c = Object.entries(cur)
+        .filter(([k, v]) => k !== uid && v && v.n && !v.m && v.n !== myName && now - (v.h || v.t || 0) < 30000)
+        .sort((a, b) => (a[1].t || 0) - (b[1].t || 0))[0];
+      if (!c) return;
+      const [ok, ov] = c;
+      m.m = gid; m.c = 1; m.o = ok; m.on = ov.n;
+      ov.m = gid; ov.c = 0;
+      return cur;
     });
-  } catch (e) { console.warn(e); return; }
-  if (!matching) return;
-  if (taken) {
-    stopMatchingListeners();
-    await createGame(taken);
-  } else if (Date.now() - waitStart > 20000) {
-    drawWaitInfo();
-    $('waitAiBtn').hidden = false;
-  }
+  } catch (e) { console.warn(e); }
+  trying = false;
 }
 
-async function leaveLobby() {
-  try { await net.tx('lobby', cur => (cur && cur.uid === uid ? null : cur)); } catch {}
+async function onMatched(me) {
+  stopMatchingListeners();
+  net.set('queue/' + uid, null).catch(() => {});
+  if (me.c) await createGame(me.m, { uid: me.o, name: me.on });
+  else joinGame(me.m, false);
 }
 
 async function cancelMatching() {
   stopMatchingListeners();
-  await leaveLobby();
+  await net.set('queue/' + uid, null).catch(() => {});
+  // 그 사이에 짝이 지어졌으면 상대는 기다리다 다시 찾게 됨
+  presState = null;
   net.offline();
   goHome();
 }
 
-async function onPaired(gid) {
-  if (!matching) return;
-  stopMatchingListeners();
-  net.set('pair/' + uid, null);
-  leaveLobby();
-  joinGame(gid, false);
-}
-
-async function createGame(opp) {
-  const gid = net.newId();
+async function createGame(gid, opp) {
   const meIdx = Math.random() < 0.5 ? 0 : 1;
   const p = {};
   p[meIdx] = { uid, name: myName };
   p[1 - meIdx] = { uid: opp.uid, name: opp.name };
   const game = { p, look: { [meIdx]: myLook() }, pos: startPos(), turn: Math.random() < 0.5 ? 0 : 1, ply: 0, status: 'ready', ready: { [meIdx]: true }, t: nowMs() };
-  await net.set('games/' + gid, game);
-  await net.set('pair/' + opp.uid, gid);
   joinGame(gid, true);
+  await net.set('games/' + gid, game).catch(e => console.warn(e));
 }
 
 // ---------- 감정 표현 ----------
@@ -565,7 +595,7 @@ function localMove(who, from, to) {
 
 // ---------- 게임 ----------
 function joinGame(gid, creator) {
-  G = { gid, creator, idx: null, data: null, readyBy: Date.now() + 10000, shownPly: -1, ended: false, pieceEls: null };
+  G = { gid, creator, idx: null, data: null, readyBy: Date.now() + 15000, shownPly: -1, ended: false, pieceEls: null, seenPly: -1, seenAt: 0, oppOn: true, oppOffAt: 0 };
   G.unsub = net.on('games/' + gid, onGame);
   clearInterval(loop);
   loop = setInterval(tick, 150);
@@ -574,8 +604,10 @@ function joinGame(gid, creator) {
 function closeGame() {
   if (!G) return;
   G.unsub && G.unsub();
+  G.oppUnsub && G.oppUnsub();
   clearInterval(loop); loop = null;
   G = null;
+  drawNetBar();
 }
 
 async function requeue(msg) {
@@ -595,6 +627,17 @@ function onGame(g) {
   G.idx = G.local ? G.meIdx : g.p[0].uid === uid ? 0 : 1;
   if (first) setupGameScreen();
   else if (G.pieceEls) applyGold();
+  if (first && !G.local) {
+    // 상대 접속 상태: 연결이 끊기면 서버가 접속 표시를 지움
+    G.oppUnsub = net.on('presence/' + g.p[1 - G.idx].uid, v => {
+      if (!G) return;
+      const on = !!v;
+      if (G.oppOn && !on) G.oppOffAt = Date.now();
+      G.oppOn = on;
+    });
+  }
+  // 이번 차례가 시작된 때는 각자 자기 시계로 잼 (기기마다 시계가 달라도 괜찮게)
+  if (g.status === 'play' && g.ply !== G.seenPly) { G.seenPly = g.ply; G.seenAt = Date.now(); }
   if (!G.local) checkEmote(g);
 
   if (g.status === 'ready') { readyStep(); return; }
@@ -602,7 +645,7 @@ function onGame(g) {
 
   if (g.status === 'play' && G.shownPly === -1) {
     Sound.play('found');
-    if (!G.local) net.setPresence('play').catch(() => {});
+    if (!G.local) setPres('play');
     show('game');
     for (const id of ['meClock', 'oppClock']) $(id).textContent = '';
     hint(g.turn === G.idx ? '내가 먼저!' : '상대가 먼저!');
@@ -610,6 +653,7 @@ function onGame(g) {
     else if (G.gold[G.idx]) toast('오늘의 1등! 황금 ' + CHAR[G.idx].name + '로 나가요', 2400);
   }
   render();
+  drawNetBar();
   if (g.status === 'done' && !G.ended) {
     G.ended = true;
     setTimeout(showResult, 700);
@@ -634,8 +678,18 @@ function readyStep() {
   }
 }
 
+// 이번 차례 남은 시간(ms). 대전은 각자 "차례가 바뀐 걸 본 순간"부터 자기 시계로 잼
+function turnLeft(g) { return G.local ? g.turnStart + TURN_MS - nowMs() : G.seenAt + TURN_MS - Date.now(); }
+const OPP_GRACE_OFF = 2000;    // 상대 연결이 끊겼을 때: 상대 시간이 끝나고 2초 뒤 승리
+const OPP_GRACE_ON = 15000;    // 상대가 연결돼 있으면 상대 기기가 스스로 판정하길 기다림 (멈춘 기기 대비 15초 뒤)
+
 function tick() {
-  if (!G || !G.data) return;
+  if (!G) return;
+  if (!G.data) {
+    // 짝은 지어졌는데 게임이 만들어지지 않음 → 다시 찾기
+    if (Date.now() > G.readyBy) requeue('상대가 들어오지 않아 다시 찾을게요');
+    return;
+  }
   const g = G.data;
   const now = nowMs();
   if (g.status === 'ready') readyStep();
@@ -650,7 +704,8 @@ function tick() {
     return;
   }
   if (g.status !== 'play') return;
-  const left = Math.max(0, g.turnStart + TURN_MS - now);
+  const leftMs = turnLeft(g);
+  const left = Math.max(0, leftMs);
   const mine = g.turn === G.idx;
   const sec = Math.ceil(left / 1000);
   if (mine && sec <= 3 && sec > 0 && G.lastTick !== g.ply + ':' + sec) { G.lastTick = g.ply + ':' + sec; Sound.play('tick'); }
@@ -659,9 +714,18 @@ function tick() {
   $('oppClock').textContent = mine ? '' : sec;
   $('meClock').classList.toggle('low', mine && sec <= 3);
   $('oppClock').classList.toggle('low', !mine && sec <= 3);
-  // 시간 초과: 내 차례면 바로, 상대 차례면 여유를 두고 판정 (상대가 나가 버린 경우 대비)
-  if (mine && now > g.turnStart + TURN_MS + 300) endGame({ winner: 1 - G.idx, reason: 'timeout' }, g.ply);
-  if (!mine && now > g.turnStart + TURN_MS + 2500) endGame({ winner: G.idx, reason: 'timeout' }, g.ply);
+  if (G.local) {
+    if (mine && leftMs < -300) endGame({ winner: 1 - G.idx, reason: 'timeout' }, g.ply);
+    return;
+  }
+  if (!netOn) return;              // 내 연결이 끊긴 동안은 판정하지 않음
+  // 시간 초과는 시간을 넘긴 본인 기기가 판정
+  if (mine && leftMs < -300) endGame({ winner: 1 - G.idx, reason: 'timeout', by: G.idx }, g.ply);
+  // 상대 차례: 상대 연결이 끊긴 게 확인될 때만 일찍 승리, 아니면 넉넉히 기다림
+  if (!mine) {
+    if (!G.oppOn && leftMs < -OPP_GRACE_OFF && Date.now() - G.oppOffAt > 3000) endGame({ winner: G.idx, reason: 'left', by: G.idx }, g.ply);
+    else if (leftMs < -OPP_GRACE_ON) endGame({ winner: G.idx, reason: 'timeout', by: G.idx }, g.ply);
+  }
 }
 
 let ending = false;
@@ -673,7 +737,7 @@ async function endGame(result, ply) {
   try {
     await net.tx('games/' + G.gid, cur => {
       if (!cur || cur.status !== 'play' || cur.ply !== expect) return;
-      cur.status = 'done'; cur.result = result;
+      cur.status = 'done'; cur.result = { ...result, at: nowMs() };
       return cur;
     });
   } catch (e) { console.warn(e); }
@@ -692,6 +756,8 @@ async function doMove(from, to) {
   const r0 = applyMove(norm(g.pos), idx, from, to, ply);
   G.pending = r0.ply;
   G.data = { ...g, pos: r0.pos, ply: r0.ply, turn: 1 - idx, turnStart: nowMs() };
+  const prevSeenAt = G.seenAt;
+  G.seenPly = r0.ply; G.seenAt = Date.now();
   moving = false;
   render();
   let ok = false;
@@ -703,7 +769,7 @@ async function doMove(from, to) {
       const r = applyMove(pos, idx, from, to, cur.ply);
       cur.pos = r.pos; cur.ply = r.ply; cur.turn = 1 - idx; cur.turnStart = nowMs();
       cur.last = { from, to, by: idx };
-      if (r.result) { cur.status = 'done'; cur.result = r.result; }
+      if (r.result) { cur.status = 'done'; cur.result = { ...r.result, by: idx, at: nowMs() }; }
       return cur;
     });
     ok = res.committed;
@@ -713,6 +779,7 @@ async function doMove(from, to) {
     // 저장 실패: 서버 상태로 되돌림
     G.pending = null;
     if (G.server) G.data = G.server;
+    G.seenPly = G.data.ply; G.seenAt = prevSeenAt;   // 되돌린 차례는 원래 시작 시각 그대로
     toast('수를 두지 못했어요');
     render();
   }
@@ -900,11 +967,11 @@ function showResult() {
   else if (r.winner === me) {
     title = '이겼어요!'; pic = 'img/icon_win.png';
     Sound.play('win');
-    text = { stuck: '상대 말을 모두 가뒀어요', timeout: '상대가 시간 안에 두지 못했어요', leave: '상대가 기권했어요' }[r.reason] || '';
+    text = { stuck: '상대 말을 모두 가뒀어요', timeout: '상대가 시간 안에 두지 못했어요', leave: '상대가 기권했어요', left: '상대 연결이 끊겼어요' }[r.reason] || '';
   } else {
     title = '졌어요'; pic = img(me, 'stuck');
     Sound.play('lose');
-    text = { stuck: '내 말이 모두 갇혔어요', timeout: '시간 안에 두지 못했어요', leave: '기권했어요' }[r.reason] || '';
+    text = { stuck: '내 말이 모두 갇혔어요', timeout: '시간 안에 두지 못했어요', leave: '기권했어요', left: '연결이 끊겨서 시간 안에 두지 못했어요' }[r.reason] || '';
   }
   for (const id of ['meClock', 'oppClock']) $(id).textContent = '';
   for (const id of ['meT', 'oppT']) $(id).style.transform = 'scaleX(0)';
@@ -920,6 +987,7 @@ function showResult() {
   $('resTitle').style.color = r.draw ? 'var(--ink)' : r.winner === me ? 'var(--gold)' : '#9fd7ff';
   modal('resultModal', true);
   closeGame();
+  presState = null;
   setTimeout(() => { if (net && !matching && !G) net.offline(); }, 1500);
 }
 
@@ -927,7 +995,7 @@ function showResult() {
 (function frame() {
   if (G && G.data && G.data.status === 'play') {
     const g = G.data, mine = g.turn === G.idx;
-    const f = Math.max(0, Math.min(1, (g.turnStart + TURN_MS - nowMs()) / TURN_MS));
+    const f = Math.max(0, Math.min(1, turnLeft(g) / TURN_MS));
     $('meT').style.transform = `scaleX(${mine ? f : 0})`;
     $('oppT').style.transform = `scaleX(${mine ? 0 : f})`;
   }
